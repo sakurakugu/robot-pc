@@ -29,6 +29,7 @@ export async function createApp(): Promise<StudioAppContext> {
   })
   const mappingService = new 地图工作台服务({
     地图目录: 配置.地图目录,
+    机器人仓库: robotRepository,
     广播: (message) => {
       wsHost.broadcast(message)
     },

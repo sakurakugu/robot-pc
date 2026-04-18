@@ -12,8 +12,8 @@ export class 地图工作台控制器 {
     return 返回数据({ maps })
   })
 
-  获取运行状态 = 处理控制器(async () => {
-    const runtime = await this.服务.获取运行状态()
+  获取运行状态 = 处理控制器(async (req) => {
+    const runtime = await this.服务.获取运行状态(this.读取机器人ID(req))
     return 返回数据(runtime)
   })
 
@@ -23,7 +23,7 @@ export class 地图工作台控制器 {
       throw Http错误工厂.参数错误('命令不能为空', 'COMMAND_REQUIRED')
     }
 
-    const runtime = await this.服务.执行命令(body)
+    const runtime = await this.服务.执行命令(body, this.读取机器人ID(req))
     return 返回数据(runtime, { 消息: '地图命令已接受' })
   })
 
@@ -38,5 +38,11 @@ export class 地图工作台控制器 {
     res.setHeader('Content-Type', image.contentType)
     res.setHeader('Cache-Control', 'no-cache')
     res.send(image.buffer)
+  }
+
+  private 读取机器人ID(req: Request): string | undefined {
+    const rawRobotId = req.query.robotId
+    const robotId = Array.isArray(rawRobotId) ? rawRobotId[0] : rawRobotId
+    return typeof robotId === 'string' && robotId.trim().length > 0 ? robotId.trim() : undefined
   }
 }

@@ -4,10 +4,13 @@ import { PNG } from 'pngjs'
 import { logger } from '../../infra/logger'
 import type { ServerMessage } from '../../shared/types'
 import { Http错误工厂 } from '../../shared/http/errors'
-import type { 地图元数据, 地图命令请求, 地图命令类型, 地图命令记录, 地图运行状态, 平面位姿 } from './types'
+import type { RobotRepository } from '../机器人管理/repository'
+import type { RobotRecord } from '../机器人管理/types'
+import type { 地图元数据, 地图命令请求, 地图命令类型, 地图命令记录, 地图运行状态, 平面位姿, 选中机器人运行信息 } from './types'
 
 interface 地图工作台服务选项 {
   地图目录: string
+  机器人仓库: RobotRepository
   广播?: (message: ServerMessage) => void
 }
 
@@ -18,11 +21,13 @@ interface 地图图片响应 {
 
 export class 地图工作台服务 {
   private readonly 地图目录: string
+  private readonly 机器人仓库: RobotRepository
   private readonly 广播?: (message: ServerMessage) => void
   private readonly 运行状态: 地图运行状态
 
   constructor(选项: 地图工作台服务选项) {
     this.地图目录 = 选项.地图目录
+    this.机器人仓库 = 选项.机器人仓库
     this.广播 = 选项.广播
     this.运行状态 = {
       mode: 'idle',
@@ -36,6 +41,9 @@ export class 地图工作台服务 {
       commandHistory: [],
       availableMapCount: 0,
       mapDirectory: this.地图目录,
+      telemetrySource: 'stub',
+      commandSource: 'stub',
+      selectedRobot: null,
     }
   }
 
@@ -53,30 +61,46 @@ export class 地图工作台服务 {
     return 有效地图列表
   }
 
-  async 获取运行状态(): Promise<地图运行状态> {
+  async 获取运行状态(robotId?: string): Promise<地图运行状态> {
     const 地图列表 = await this.获取地图列表()
-    const 当前地图 = this.获取当前地图(地图列表)
+    const 基础状态 = this.复制运行状态()
+    const 当前地图 = this.获取当前地图(地图列表, 基础状态.activeMapId)
 
-    if (!当前地图 && this.运行状态.activeMapId) {
-      this.运行状态.activeMapId = null
-      this.运行状态.localizationActive = false
-      this.运行状态.goalPose = null
-      this.运行状态.currentPose = null
-      this.运行状态.mode = this.运行状态.mappingActive ? 'mapping' : 'idle'
+    if (!当前地图 && 基础状态.activeMapId) {
+      基础状态.activeMapId = null
+      基础状态.localizationActive = false
+      基础状态.goalPose = null
+      基础状态.currentPose = null
+      基础状态.mode = 基础状态.mappingActive ? 'mapping' : 'idle'
     }
 
+    if (!robotId) {
+      return 基础状态
+    }
+
+    const 机器人 = await this.机器人仓库.getRobot(robotId)
+    if (!机器人) {
+      throw Http错误工厂.未找到('未找到指定机器人', 'ROBOT_NOT_FOUND')
+    }
+
+    const 真实运行态 = await this.读取机器人运行状态(机器人, 地图列表)
     return {
-      ...this.运行状态,
-      commandHistory: [...this.运行状态.commandHistory],
-      currentPose: this.运行状态.currentPose ? { ...this.运行状态.currentPose } : null,
-      goalPose: this.运行状态.goalPose ? { ...this.运行状态.goalPose } : null,
+      ...基础状态,
+      ...真实运行态,
+      commandHistory: [...基础状态.commandHistory],
+      commandSource: 'pending_robot',
+      selectedRobot: 真实运行态.selectedRobot ?? null,
     }
   }
 
-  async 执行命令(请求: 地图命令请求): Promise<地图运行状态> {
+  async 执行命令(请求: 地图命令请求, robotId?: string): Promise<地图运行状态> {
+    if (robotId) {
+      throw Http错误工厂.参数错误('当前已接入真机遥测，地图命令直连链路待接入', 'ROBOT_COMMAND_PENDING')
+    }
+
     const 命令 = 请求.command
     const 地图列表 = await this.获取地图列表()
-    const 目标地图 = 请求.mapId ? 地图列表.find((item) => item.id === 请求.mapId) : this.获取当前地图(地图列表)
+    const 目标地图 = 请求.mapId ? 地图列表.find((item) => item.id === 请求.mapId) : this.获取当前地图(地图列表, this.运行状态.activeMapId)
 
     switch (命令) {
       case 'start_mapping':
@@ -183,11 +207,11 @@ export class 地图工作台服务 {
     }
   }
 
-  private 获取当前地图(地图列表: 地图元数据[]): 地图元数据 | null {
-    if (!this.运行状态.activeMapId) {
+  private 获取当前地图(地图列表: 地图元数据[], activeMapId: string | null): 地图元数据 | null {
+    if (!activeMapId) {
       return null
     }
-    return 地图列表.find((item) => item.id === this.运行状态.activeMapId) ?? null
+    return 地图列表.find((item) => item.id === activeMapId) ?? null
   }
 
   private 记录命令(command: 地图命令类型, mapId: string | null): void {
@@ -218,6 +242,243 @@ export class 地图工作台服务 {
       },
     })
   }
+
+  private 复制运行状态(): 地图运行状态 {
+    return {
+      ...this.运行状态,
+      commandHistory: [...this.运行状态.commandHistory],
+      currentPose: this.运行状态.currentPose ? { ...this.运行状态.currentPose } : null,
+      goalPose: this.运行状态.goalPose ? { ...this.运行状态.goalPose } : null,
+      telemetrySource: 'stub',
+      commandSource: 'stub',
+      selectedRobot: null,
+    }
+  }
+
+  private async 读取机器人运行状态(机器人: RobotRecord, 地图列表: 地图元数据[]): Promise<Partial<地图运行状态>> {
+    const serverUrl = 规范化机器人服务地址(机器人)
+    const 机器人信息: 选中机器人运行信息 = {
+      uuid: 机器人.uuid,
+      name: 机器人.name,
+      ip: 机器人.ip,
+      status: 机器人.status,
+      serverUrl,
+      telemetryOnline: null,
+      telemetryFetchedAt: null,
+      telemetryAvailableTypes: [],
+      telemetryError: null,
+    }
+
+    if (!serverUrl) {
+      机器人信息.telemetryError = '未配置 robot-server 地址'
+      return {
+        telemetrySource: 'stub',
+        selectedRobot: 机器人信息,
+      }
+    }
+
+    try {
+      const telemetry = await 拉取机器人完整遥测(serverUrl)
+      const 机器人摘要 = 读取对象(telemetry.robot_summary)
+      const 定位状态 = 读取对象(机器人摘要?.localization)
+      const 当前位姿 = 解析平面位姿(读取对象(telemetry.navigation_state)?.current_pose, 读取数值(定位状态, 'confidence') ?? 1)
+      const 目标位姿 = 解析平面位姿(读取对象(telemetry.navigation_state)?.current_goal, 读取数值(定位状态, 'confidence') ?? 1)
+      const 导航状态 = 读取对象(机器人摘要?.navigation)
+      const 地图状态 = 读取对象(telemetry.map_state) ?? 读取对象(机器人摘要?.mapping)
+      const 当前地图名 = 读取字符串(地图状态, 'current_map') ?? 读取字符串(定位状态, 'map_name')
+      const 当前地图 = 当前地图名 ? 地图列表.find((item) => item.name === 当前地图名) ?? null : null
+      const localizationState = 读取字符串(定位状态, 'state')
+      const navigationState = 读取字符串(导航状态, 'state')
+      const mapState = 读取字符串(地图状态, 'state')
+
+      机器人信息.telemetryOnline = 读取布尔值(telemetry, 'online')
+      机器人信息.telemetryFetchedAt = new Date().toISOString()
+      机器人信息.telemetryAvailableTypes = 读取字符串数组(telemetry.available_types)
+
+      return {
+        mode: 推断工作模式(mapState, localizationState, navigationState, 当前地图 ? 当前地图.id : null),
+        activeMapId: 当前地图?.id ?? null,
+        mappingActive: 是否为建图态(mapState),
+        localizationActive: 是否为定位态(localizationState),
+        currentPose: 当前位姿,
+        goalPose: 目标位姿,
+        telemetrySource: 'robot',
+        selectedRobot: 机器人信息,
+      }
+    } catch (error) {
+      机器人信息.telemetryError = error instanceof Error ? error.message : String(error)
+      机器人信息.telemetryFetchedAt = new Date().toISOString()
+      logger.warn('读取机器人遥测失败，回退为工作站本地桩状态', {
+        robotId: 机器人.uuid,
+        serverUrl,
+        error: 机器人信息.telemetryError,
+      })
+      return {
+        telemetrySource: 'stub',
+        selectedRobot: 机器人信息,
+      }
+    }
+  }
+}
+
+async function 拉取机器人完整遥测(serverUrl: string): Promise<Record<string, unknown>> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => {
+    controller.abort()
+  }, 2500)
+
+  try {
+    const response = await fetch(`${serverUrl.replace(/\/$/, '')}/api/v1/telemetry/full`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`robot-server 响应失败 (${response.status})`)
+    }
+
+    const payload = await response.json() as { success?: boolean; data?: unknown; error?: string }
+    if (!payload.success || !payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) {
+      throw new Error(payload.error || 'robot-server 返回了无效遥测数据')
+    }
+
+    return payload.data as Record<string, unknown>
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('读取 robot-server 遥测超时')
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function 规范化机器人服务地址(机器人: RobotRecord): string | null {
+  if (机器人.serverUrl && 机器人.serverUrl.trim().length > 0) {
+    return 机器人.serverUrl.trim()
+  }
+  if (机器人.ip.trim().length > 0) {
+    return `http://${机器人.ip}:8080`
+  }
+  return null
+}
+
+function 解析平面位姿(value: unknown, confidence: number): 平面位姿 | null {
+  const pose = 读取对象(value)
+  const position = 读取三元数值数组(pose?.position)
+  const orientation = 读取四元数值数组(pose?.orientation)
+  if (!position || !orientation) {
+    return null
+  }
+
+  return {
+    position,
+    orientation,
+    yaw: 从四元数解析偏航角(orientation),
+    confidence: 保留两位小数(confidence),
+  }
+}
+
+function 从四元数解析偏航角(orientation: [number, number, number, number]): number {
+  const [x, y, z, w] = orientation
+  const siny = 2 * (w * z + x * y)
+  const cosy = 1 - 2 * (y * y + z * z)
+  return 保留三位小数(Math.atan2(siny, cosy))
+}
+
+function 推断工作模式(
+  mapState: string | null,
+  localizationState: string | null,
+  navigationState: string | null,
+  activeMapId: string | null,
+): 'idle' | 'mapping' | 'map_loaded' | 'localizing' {
+  if (是否为建图态(mapState)) {
+    return 'mapping'
+  }
+  if (是否为定位态(localizationState) || 是否为定位态(navigationState)) {
+    return 'localizing'
+  }
+  if (activeMapId) {
+    return 'map_loaded'
+  }
+  return 'idle'
+}
+
+function 是否为建图态(state: string | null): boolean {
+  if (!state) {
+    return false
+  }
+  return ['mapping', 'building', 'running', 'active'].some((keyword) => state.toLowerCase().includes(keyword))
+}
+
+function 是否为定位态(state: string | null): boolean {
+  if (!state) {
+    return false
+  }
+  return ['localized', 'localizing', 'running', 'active', 'tracking'].some((keyword) => state.toLowerCase().includes(keyword))
+}
+
+function 读取对象(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  return value as Record<string, unknown>
+}
+
+function 读取字符串(value: Record<string, unknown> | null | undefined, key: string): string | null {
+  const target = value?.[key]
+  if (typeof target !== 'string') {
+    return null
+  }
+  const text = target.trim()
+  return text.length > 0 ? text : null
+}
+
+function 读取布尔值(value: Record<string, unknown>, key: string): boolean | null {
+  const target = value[key]
+  return typeof target === 'boolean' ? target : null
+}
+
+function 读取数值(value: Record<string, unknown> | null | undefined, key: string): number | null {
+  const target = value?.[key]
+  const numberValue = typeof target === 'number' ? target : Number(target)
+  return Number.isFinite(numberValue) ? numberValue : null
+}
+
+function 读取三元数值数组(value: unknown): [number, number, number] | null {
+  if (!Array.isArray(value) || value.length < 3) {
+    return null
+  }
+
+  const numbers = value.slice(0, 3).map((item) => Number(item))
+  if (numbers.some((item) => !Number.isFinite(item))) {
+    return null
+  }
+
+  return [numbers[0], numbers[1], numbers[2]]
+}
+
+function 读取四元数值数组(value: unknown): [number, number, number, number] | null {
+  if (!Array.isArray(value) || value.length < 4) {
+    return null
+  }
+
+  const numbers = value.slice(0, 4).map((item) => Number(item))
+  if (numbers.some((item) => !Number.isFinite(item))) {
+    return null
+  }
+
+  return [numbers[0], numbers[1], numbers[2], numbers[3]]
+}
+
+function 读取字符串数组(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
 }
 
 async function 递归收集地图Yaml(rootDir: string): Promise<string[]> {

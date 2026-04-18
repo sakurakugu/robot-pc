@@ -7,10 +7,29 @@
         </p>
         <h1>地图查看、建图调试与定位联调</h1>
         <p class="hero-description">
-          当前先接本地工作站地图目录与运行态桩接口，后续可继续替换成真机导航状态、雷达轨迹和建图进度流。
+          当前已支持读取本地地图目录，并可按机器人拉取真实 `robot-server` 遥测。命令链路仍保留明确边界，避免把真机状态和本地桩混在一起误导调试。
         </p>
       </div>
       <div class="hero-actions">
+        <el-select
+          v-model="selectedRobotId"
+          class="robot-select"
+          clearable
+          filterable
+          placeholder="选择机器人读取真机遥测"
+        >
+          <el-option
+            v-for="robot in robots"
+            :key="robot.uuid"
+            :label="robot.name || robot.uuid"
+            :value="robot.uuid"
+          >
+            <div class="robot-option">
+              <span>{{ robot.name || robot.uuid }}</span>
+              <small>{{ robot.serverUrl || robot.ip || '-' }}</small>
+            </div>
+          </el-option>
+        </el-select>
         <el-button @click="goHome">
           返回首页
         </el-button>
@@ -39,6 +58,14 @@
         <strong>{{ activeMap?.name || '未加载' }}</strong>
       </div>
       <div class="status-chip">
+        <span class="status-label">遥测来源</span>
+        <strong>{{ telemetrySourceLabelMap[runtime.telemetrySource] }}</strong>
+      </div>
+      <div class="status-chip">
+        <span class="status-label">命令来源</span>
+        <strong>{{ commandSourceLabelMap[runtime.commandSource] }}</strong>
+      </div>
+      <div class="status-chip status-chip-wide">
         <span class="status-label">地图目录</span>
         <strong class="path-text">{{ runtime.mapDirectory || '-' }}</strong>
       </div>
@@ -186,6 +213,7 @@
           <el-button
             type="warning"
             plain
+            :disabled="runtime.commandSource !== 'stub'"
             @click="sendCommand('start_mapping')"
           >
             开始建图
@@ -193,7 +221,7 @@
           <el-button
             type="primary"
             plain
-            :disabled="!selectedMap"
+            :disabled="!selectedMap || runtime.commandSource !== 'stub'"
             @click="sendCommand('load_map', selectedMap?.id)"
           >
             加载选中地图
@@ -201,18 +229,71 @@
           <el-button
             type="success"
             plain
-            :disabled="!selectedMap"
+            :disabled="!selectedMap || runtime.commandSource !== 'stub'"
             @click="sendCommand('start_localization', selectedMap?.id)"
           >
             启动定位
           </el-button>
           <el-button
             plain
-            :disabled="!runtime.localizationActive"
+            :disabled="!runtime.localizationActive || runtime.commandSource !== 'stub'"
             @click="sendCommand('stop_localization')"
           >
             停止定位
           </el-button>
+        </div>
+
+        <div
+          v-if="runtime.commandSource !== 'stub'"
+          class="runtime-tip"
+        >
+          已接入真机遥测读取，地图命令直连链路尚未接入，按钮已禁用。
+        </div>
+
+        <div class="runtime-section">
+          <h3>机器人遥测</h3>
+          <div
+            v-if="!runtime.selectedRobot"
+            class="history-empty"
+          >
+            当前未选择机器人，页面使用工作站本地桩状态。
+          </div>
+          <div
+            v-else
+            class="robot-runtime-card"
+          >
+            <div class="robot-runtime-top">
+              <strong>{{ runtime.selectedRobot.name }}</strong>
+              <el-tag :type="runtime.selectedRobot.telemetryOnline ? 'success' : 'info'">
+                {{ runtime.selectedRobot.telemetryOnline ? '遥测在线' : '遥测未知/离线' }}
+              </el-tag>
+            </div>
+            <div class="robot-runtime-meta">
+              <span>IP: {{ runtime.selectedRobot.ip }}</span>
+              <span>服务: {{ runtime.selectedRobot.serverUrl || '-' }}</span>
+              <span>状态: {{ runtime.selectedRobot.status }}</span>
+              <span>拉取时间: {{ runtime.selectedRobot.telemetryFetchedAt ? formatTime(runtime.selectedRobot.telemetryFetchedAt) : '-' }}</span>
+            </div>
+            <div
+              v-if="runtime.selectedRobot.telemetryError"
+              class="runtime-error"
+            >
+              {{ runtime.selectedRobot.telemetryError }}
+            </div>
+            <div
+              v-if="runtime.selectedRobot.telemetryAvailableTypes.length > 0"
+              class="telemetry-tags"
+            >
+              <el-tag
+                v-for="type in runtime.selectedRobot.telemetryAvailableTypes"
+                :key="type"
+                size="small"
+                effect="plain"
+              >
+                {{ type }}
+              </el-tag>
+            </div>
+          </div>
         </div>
 
         <div class="runtime-section">
@@ -292,10 +373,14 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { mappingApi } from '../api'
 import type { MappingCommand, MappingRuntime, PlanarPose, StudioMap } from '../types'
+import { getRobotList } from '@/features/robot/api'
+import type { Robot } from '@/features/robot/types'
 
 const router = useRouter()
 const loading = ref(false)
 const maps = ref<StudioMap[]>([])
+const robots = ref<Robot[]>([])
+const selectedRobotId = ref('')
 const selectedMapId = ref<string>('')
 const mapImageSize = ref({ width: 0, height: 0 })
 const mapImageBroken = ref(false)
@@ -311,6 +396,9 @@ const runtime = ref<MappingRuntime>({
   commandHistory: [],
   availableMapCount: 0,
   mapDirectory: '',
+  telemetrySource: 'stub',
+  commandSource: 'stub',
+  selectedRobot: null,
 })
 
 const modeLabelMap: Record<MappingRuntime['mode'], string> = {
@@ -327,6 +415,16 @@ const commandLabelMap: Record<MappingCommand, string> = {
   stop_localization: '停止定位',
 }
 
+const telemetrySourceLabelMap: Record<MappingRuntime['telemetrySource'], string> = {
+  stub: '工作站本地桩',
+  robot: '真机 robot-server',
+}
+
+const commandSourceLabelMap: Record<MappingRuntime['commandSource'], string> = {
+  stub: '工作站本地桩',
+  pending_robot: '真机命令待接入',
+}
+
 const selectedMap = computed(() => maps.value.find((item) => item.id === selectedMapId.value) || null)
 const activeMap = computed(() => maps.value.find((item) => item.id === runtime.value.activeMapId) || null)
 
@@ -338,13 +436,15 @@ let pollTimer: number | null = null
 async function refreshAll(): Promise<void> {
   loading.value = true
   try {
-    const [mapsResponse, runtimeResponse] = await Promise.all([
+    const [mapsResponse, runtimeResponse, robotResponse] = await Promise.all([
       mappingApi.getMaps(),
-      mappingApi.getRuntime(),
+      mappingApi.getRuntime(selectedRobotId.value || undefined),
+      getRobotList(),
     ])
 
     maps.value = mapsResponse.data.maps
     runtime.value = runtimeResponse.data
+    robots.value = robotResponse.data.robots
 
     if (runtime.value.activeMapId && maps.value.some((item) => item.id === runtime.value.activeMapId)) {
       selectedMapId.value = runtime.value.activeMapId
@@ -360,7 +460,7 @@ async function refreshAll(): Promise<void> {
 
 async function sendCommand(command: MappingCommand, mapId?: string): Promise<void> {
   try {
-    const response = await mappingApi.sendCommand(command, mapId)
+    const response = await mappingApi.sendCommand(command, mapId, selectedRobotId.value || undefined)
     runtime.value = response.data
     if (response.data.activeMapId) {
       selectedMapId.value = response.data.activeMapId
@@ -442,6 +542,10 @@ watch(selectedMapId, () => {
   mapImageSize.value = { width: 0, height: 0 }
 })
 
+watch(selectedRobotId, async () => {
+  await refreshAll()
+})
+
 onBeforeUnmount(() => {
   if (pollTimer !== null) {
     window.clearInterval(pollTimer)
@@ -504,9 +608,23 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.robot-select {
+  width: 280px;
+}
+
+.robot-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.robot-option small {
+  color: rgba(100, 116, 139, 0.9);
+}
+
 .status-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 16px;
   margin-top: 18px;
 }
@@ -530,6 +648,10 @@ onBeforeUnmount(() => {
   font-size: 13px;
   line-height: 1.6;
   word-break: break-all;
+}
+
+.status-chip-wide {
+  grid-column: span 2;
 }
 
 .workbench-grid {
@@ -749,6 +871,15 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.runtime-tip {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #dbeafe;
+  line-height: 1.6;
+}
+
 .runtime-section {
   margin-top: 22px;
   padding-top: 22px;
@@ -799,6 +930,46 @@ onBeforeUnmount(() => {
   line-height: 1.7;
 }
 
+.robot-runtime-card {
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.robot-runtime-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.robot-runtime-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  color: rgba(226, 232, 240, 0.68);
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.runtime-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
+  line-height: 1.6;
+}
+
+.telemetry-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .history-empty {
   color: rgba(226, 232, 240, 0.68);
 }
@@ -837,6 +1008,10 @@ onBeforeUnmount(() => {
   .runtime-panel {
     grid-column: 1 / -1;
   }
+
+  .status-chip-wide {
+    grid-column: span 2;
+  }
 }
 
 @media (max-width: 980px) {
@@ -852,6 +1027,14 @@ onBeforeUnmount(() => {
   .workbench-grid,
   .command-grid {
     grid-template-columns: 1fr;
+  }
+
+  .status-chip-wide {
+    grid-column: span 1;
+  }
+
+  .robot-select {
+    width: 100%;
   }
 }
 </style>

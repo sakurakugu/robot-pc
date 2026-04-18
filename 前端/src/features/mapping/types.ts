@@ -1,4 +1,6 @@
 export type MappingMode = 'idle' | 'mapping' | 'map_loaded' | 'localizing'
+export type MappingTelemetrySource = 'stub' | 'robot'
+export type MappingCommandSource = 'stub' | 'pending_robot'
 
 export type MappingCommand = 'start_mapping' | 'load_map' | 'start_localization' | 'stop_localization'
 
@@ -31,6 +33,18 @@ export interface MappingCommandRecord {
   status: 'accepted'
 }
 
+export interface SelectedRobotRuntime {
+  uuid: string
+  name: string
+  ip: string
+  status: 'online' | 'offline' | 'connecting' | 'error'
+  serverUrl: string | null
+  telemetryOnline: boolean | null
+  telemetryFetchedAt: string | null
+  telemetryAvailableTypes: string[]
+  telemetryError: string | null
+}
+
 export interface MappingRuntime {
   mode: MappingMode
   activeMapId: string | null
@@ -43,4 +57,7 @@ export interface MappingRuntime {
   commandHistory: MappingCommandRecord[]
   availableMapCount: number
   mapDirectory: string
+  telemetrySource: MappingTelemetrySource
+  commandSource: MappingCommandSource
+  selectedRobot: SelectedRobotRuntime | null
 }

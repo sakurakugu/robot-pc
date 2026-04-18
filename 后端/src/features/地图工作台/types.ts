@@ -1,4 +1,6 @@
 export type 地图工作模式 = 'idle' | 'mapping' | 'map_loaded' | 'localizing'
+export type 地图遥测来源 = 'stub' | 'robot'
+export type 地图命令来源 = 'stub' | 'pending_robot'
 
 export type 地图命令类型 =
   | 'start_mapping'
@@ -35,6 +37,18 @@ export interface 地图命令记录 {
   status: 'accepted'
 }
 
+export interface 选中机器人运行信息 {
+  uuid: string
+  name: string
+  ip: string
+  status: 'online' | 'offline' | 'connecting' | 'error'
+  serverUrl: string | null
+  telemetryOnline: boolean | null
+  telemetryFetchedAt: string | null
+  telemetryAvailableTypes: string[]
+  telemetryError: string | null
+}
+
 export interface 地图运行状态 {
   mode: 地图工作模式
   activeMapId: string | null
@@ -47,6 +61,9 @@ export interface 地图运行状态 {
   commandHistory: 地图命令记录[]
   availableMapCount: number
   mapDirectory: string
+  telemetrySource: 地图遥测来源
+  commandSource: 地图命令来源
+  selectedRobot: 选中机器人运行信息 | null
 }
 
 export interface 地图命令请求 {

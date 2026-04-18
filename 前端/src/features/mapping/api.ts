@@ -8,11 +8,15 @@ export const mappingApi = {
     return http.get(`${BASE_URL}/maps`)
   },
 
-  getRuntime(): Promise<{ success: boolean; data: MappingRuntime }> {
-    return http.get(`${BASE_URL}/runtime`)
+  getRuntime(robotId?: string): Promise<{ success: boolean; data: MappingRuntime }> {
+    return http.get(`${BASE_URL}/runtime`, {
+      params: robotId ? { robotId } : undefined,
+    })
   },
 
-  sendCommand(command: MappingCommand, mapId?: string): Promise<{ success: boolean; data: MappingRuntime; message: string }> {
-    return http.post(`${BASE_URL}/commands`, { command, mapId })
+  sendCommand(command: MappingCommand, mapId?: string, robotId?: string): Promise<{ success: boolean; data: MappingRuntime; message: string }> {
+    return http.post(`${BASE_URL}/commands`, { command, mapId }, {
+      params: robotId ? { robotId } : undefined,
+    })
   },
 }

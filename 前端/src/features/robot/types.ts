@@ -5,6 +5,7 @@ export interface Robot {
   name?: string | null
   ip?: string | null
   status: RobotStatus
+  serverUrl?: string | null
 }
 
 export interface RobotListResponse {

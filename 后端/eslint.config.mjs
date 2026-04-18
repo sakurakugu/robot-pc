@@ -17,6 +17,8 @@ export default [
         process: 'readonly',
         __dirname: 'readonly',
         Buffer: 'readonly',
+        fetch: 'readonly',
+        AbortController: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         setInterval: 'readonly',
