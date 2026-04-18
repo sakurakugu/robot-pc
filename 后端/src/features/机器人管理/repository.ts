@@ -1,11 +1,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import 配置 from '../../infra/config'
-import type { RobotRecord } from './types'
+import type { RobotRecord, 保存机器人输入 } from './types'
 
 export interface RobotRepository {
   listRobots(): Promise<RobotRecord[]>
   getRobot(uuid: string): Promise<RobotRecord | undefined>
+  saveRobot(input: 保存机器人输入): Promise<RobotRecord>
+  deleteRobot(uuid: string): Promise<boolean>
 }
 
 const 示例机器人: RobotRecord[] = [
@@ -37,6 +39,40 @@ export class 本地机器人仓库 implements RobotRepository {
     return robots.find((item) => item.uuid === uuid)
   }
 
+  async saveRobot(input: 保存机器人输入): Promise<RobotRecord> {
+    const robots = await this.读取机器人列表()
+    const record = 规范化机器人记录({
+      uuid: input.uuid.trim(),
+      name: input.name.trim(),
+      ip: input.ip.trim(),
+      status: robots.find((item) => item.uuid === input.uuid)?.status ?? 'offline',
+      serverUrl: input.serverUrl?.trim() || undefined,
+    })
+
+    const index = robots.findIndex((item) => item.uuid === record.uuid)
+    if (index >= 0) {
+      robots[index] = {
+        ...robots[index],
+        ...record,
+      }
+    } else {
+      robots.push(record)
+    }
+
+    await this.写入机器人列表(robots)
+    return record
+  }
+
+  async deleteRobot(uuid: string): Promise<boolean> {
+    const robots = await this.读取机器人列表()
+    const filtered = robots.filter((item) => item.uuid !== uuid)
+    if (filtered.length === robots.length) {
+      return false
+    }
+    await this.写入机器人列表(filtered)
+    return true
+  }
+
   private async 读取机器人列表(): Promise<RobotRecord[]> {
     await fs.promises.mkdir(path.dirname(this.文件路径), { recursive: true })
 
@@ -54,6 +90,11 @@ export class 本地机器人仓库 implements RobotRepository {
       }
       throw error
     }
+  }
+
+  private async 写入机器人列表(robots: RobotRecord[]): Promise<void> {
+    await fs.promises.mkdir(path.dirname(this.文件路径), { recursive: true })
+    await fs.promises.writeFile(this.文件路径, JSON.stringify(robots, null, 2), 'utf-8')
   }
 }
 

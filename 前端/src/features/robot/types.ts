@@ -8,6 +8,28 @@ export interface Robot {
   serverUrl?: string | null
 }
 
+export interface SaveRobotPayload {
+  uuid: string
+  name: string
+  ip: string
+  serverUrl?: string | null
+}
+
+export interface StudioAccessCandidate {
+  label: string
+  host: string
+  businessUrlTemplate: string
+}
+
+export interface RobotAccessInfoResponse {
+  success: boolean
+  data: {
+    port: number
+    businessPath: string
+    candidates: StudioAccessCandidate[]
+  }
+}
+
 export interface RobotListResponse {
   success: boolean
   data: {

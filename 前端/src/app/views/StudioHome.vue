@@ -25,6 +25,23 @@
     <section class="module-grid">
       <button
         type="button"
+        class="module-card module-card-robot"
+        @click="router.push('/robots')"
+      >
+        <div class="module-icon">
+          <el-icon><Cpu /></el-icon>
+        </div>
+        <p class="module-tag">
+          机器人接入
+        </p>
+        <h2>维护机器人配置并生成工作站接入地址</h2>
+        <p class="module-desc">
+          统一管理机器人 IP、robot-server 地址和 robot-agent 业务通道接入方式。
+        </p>
+      </button>
+
+      <button
+        type="button"
         class="module-card module-card-mapping"
         @click="router.push('/mapping')"
       >
@@ -61,7 +78,7 @@
 </template>
 
 <script setup lang="ts">
-import { LocationInformation, VideoPlay } from '@element-plus/icons-vue'
+import { Cpu, LocationInformation, VideoPlay } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -137,7 +154,7 @@ const router = useRouter()
 
 .module-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
   margin-top: 24px;
 }
@@ -161,6 +178,12 @@ const router = useRouter()
   background:
     radial-gradient(circle at top right, rgba(56, 189, 248, 0.16), transparent 24%),
     linear-gradient(180deg, rgba(7, 18, 31, 0.96), rgba(10, 28, 44, 0.9));
+}
+
+.module-card-robot {
+  background:
+    radial-gradient(circle at top center, rgba(34, 197, 94, 0.14), transparent 24%),
+    linear-gradient(180deg, rgba(8, 28, 24, 0.96), rgba(12, 42, 32, 0.9));
 }
 
 .module-card-choreo {
