@@ -213,7 +213,7 @@
           <el-button
             type="warning"
             plain
-            :disabled="runtime.commandSource !== 'stub'"
+            :disabled="runtime.commandSource !== 'stub' && runtime.commandSource !== 'robot_ws'"
             @click="sendCommand('start_mapping')"
           >
             开始建图
@@ -221,7 +221,7 @@
           <el-button
             type="primary"
             plain
-            :disabled="!selectedMap || runtime.commandSource !== 'stub'"
+            :disabled="!selectedMap || (runtime.commandSource !== 'stub' && runtime.commandSource !== 'robot_ws')"
             @click="sendCommand('load_map', selectedMap?.id)"
           >
             加载选中地图
@@ -229,14 +229,14 @@
           <el-button
             type="success"
             plain
-            :disabled="!selectedMap || runtime.commandSource !== 'stub'"
+            :disabled="!selectedMap || (runtime.commandSource !== 'stub' && runtime.commandSource !== 'robot_ws')"
             @click="sendCommand('start_localization', selectedMap?.id)"
           >
             启动定位
           </el-button>
           <el-button
             plain
-            :disabled="!runtime.localizationActive || runtime.commandSource !== 'stub'"
+            :disabled="!runtime.localizationActive || (runtime.commandSource !== 'stub' && runtime.commandSource !== 'robot_ws')"
             @click="sendCommand('stop_localization')"
           >
             停止定位
@@ -244,10 +244,17 @@
         </div>
 
         <div
-          v-if="runtime.commandSource !== 'stub'"
+          v-if="runtime.commandSource === 'pending_robot'"
           class="runtime-tip"
         >
           已接入真机遥测读取，地图命令直连链路尚未接入，按钮已禁用。
+        </div>
+
+        <div
+          v-if="runtime.commandSource === 'robot_ws'"
+          class="runtime-tip runtime-tip-success"
+        >
+          当前机器人已连接到工作站业务通道，地图命令将直接通过 `robot-agent` 业务 WebSocket 下发。
         </div>
 
         <div class="runtime-section">
@@ -272,6 +279,7 @@
               <span>IP: {{ runtime.selectedRobot.ip }}</span>
               <span>服务: {{ runtime.selectedRobot.serverUrl || '-' }}</span>
               <span>状态: {{ runtime.selectedRobot.status }}</span>
+              <span>工作站通道: {{ runtime.selectedRobot.wsConnected ? '已连接' : '未连接' }}</span>
               <span>拉取时间: {{ runtime.selectedRobot.telemetryFetchedAt ? formatTime(runtime.selectedRobot.telemetryFetchedAt) : '-' }}</span>
             </div>
             <div
@@ -422,6 +430,7 @@ const telemetrySourceLabelMap: Record<MappingRuntime['telemetrySource'], string>
 
 const commandSourceLabelMap: Record<MappingRuntime['commandSource'], string> = {
   stub: '工作站本地桩',
+  robot_ws: '工作站直连 robot-agent',
   pending_robot: '真机命令待接入',
 }
 
@@ -878,6 +887,11 @@ onBeforeUnmount(() => {
   background: rgba(59, 130, 246, 0.12);
   color: #dbeafe;
   line-height: 1.6;
+}
+
+.runtime-tip-success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #d1fae5;
 }
 
 .runtime-section {

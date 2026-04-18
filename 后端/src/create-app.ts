@@ -30,12 +30,20 @@ export async function createApp(): Promise<StudioAppContext> {
   const mappingService = new 地图工作台服务({
     地图目录: 配置.地图目录,
     机器人仓库: robotRepository,
+    发送到机器人: (robotId, message) => wsHost.sendToRobot(robotId, message),
+    是否机器人在线: (robotId) => wsHost.isRobotConnected(robotId),
     广播: (message) => {
       wsHost.broadcast(message)
     },
   })
   await choreoService.初始化()
   await mappingService.初始化()
+
+  wsHost.onMessage((message, context) => {
+    if (context.role === 'robot' && context.robotId) {
+      mappingService.处理机器人消息(context.robotId, message)
+    }
+  })
 
   const choreoController = new ChoreoController(choreoService)
   const mappingController = new 地图工作台控制器(mappingService)

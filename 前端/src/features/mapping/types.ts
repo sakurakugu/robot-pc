@@ -1,6 +1,6 @@
 export type MappingMode = 'idle' | 'mapping' | 'map_loaded' | 'localizing'
 export type MappingTelemetrySource = 'stub' | 'robot'
-export type MappingCommandSource = 'stub' | 'pending_robot'
+export type MappingCommandSource = 'stub' | 'robot_ws' | 'pending_robot'
 
 export type MappingCommand = 'start_mapping' | 'load_map' | 'start_localization' | 'stop_localization'
 
@@ -39,6 +39,7 @@ export interface SelectedRobotRuntime {
   ip: string
   status: 'online' | 'offline' | 'connecting' | 'error'
   serverUrl: string | null
+  wsConnected: boolean
   telemetryOnline: boolean | null
   telemetryFetchedAt: string | null
   telemetryAvailableTypes: string[]

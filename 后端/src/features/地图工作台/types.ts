@@ -1,6 +1,6 @@
 export type 地图工作模式 = 'idle' | 'mapping' | 'map_loaded' | 'localizing'
 export type 地图遥测来源 = 'stub' | 'robot'
-export type 地图命令来源 = 'stub' | 'pending_robot'
+export type 地图命令来源 = 'stub' | 'robot_ws' | 'pending_robot'
 
 export type 地图命令类型 =
   | 'start_mapping'
@@ -43,6 +43,7 @@ export interface 选中机器人运行信息 {
   ip: string
   status: 'online' | 'offline' | 'connecting' | 'error'
   serverUrl: string | null
+  wsConnected: boolean
   telemetryOnline: boolean | null
   telemetryFetchedAt: string | null
   telemetryAvailableTypes: string[]

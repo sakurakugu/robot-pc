@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { PNG } from 'pngjs'
+import { v7 as uuidv7 } from 'uuid'
 import { logger } from '../../infra/logger'
 import type { ServerMessage } from '../../shared/types'
 import { Http错误工厂 } from '../../shared/http/errors'
@@ -11,6 +12,8 @@ import type { 地图元数据, 地图命令请求, 地图命令类型, 地图命
 interface 地图工作台服务选项 {
   地图目录: string
   机器人仓库: RobotRepository
+  发送到机器人: (robotId: string, message: ServerMessage) => boolean
+  是否机器人在线: (robotId: string) => boolean
   广播?: (message: ServerMessage) => void
 }
 
@@ -19,15 +22,36 @@ interface 地图图片响应 {
   contentType: string
 }
 
+interface 机器人运行态缓存 {
+  robotSummary: Record<string, unknown> | null
+  navigationState: Record<string, unknown> | null
+  mapState: Record<string, unknown> | null
+  lastMapResponse: Record<string, unknown> | null
+  lastUpdatedAt: string | null
+}
+
+interface 待完成地图命令 {
+  robotId: string
+  resolve: (value: Record<string, unknown>) => void
+  reject: (reason?: unknown) => void
+  timeout: ReturnType<typeof setTimeout>
+}
+
 export class 地图工作台服务 {
   private readonly 地图目录: string
   private readonly 机器人仓库: RobotRepository
+  private readonly 发送到机器人: (robotId: string, message: ServerMessage) => boolean
+  private readonly 是否机器人在线: (robotId: string) => boolean
   private readonly 广播?: (message: ServerMessage) => void
   private readonly 运行状态: 地图运行状态
+  private readonly 机器人状态缓存 = new Map<string, 机器人运行态缓存>()
+  private readonly 待完成命令 = new Map<string, 待完成地图命令>()
 
   constructor(选项: 地图工作台服务选项) {
     this.地图目录 = 选项.地图目录
     this.机器人仓库 = 选项.机器人仓库
+    this.发送到机器人 = 选项.发送到机器人
+    this.是否机器人在线 = 选项.是否机器人在线
     this.广播 = 选项.广播
     this.运行状态 = {
       mode: 'idle',
@@ -88,14 +112,14 @@ export class 地图工作台服务 {
       ...基础状态,
       ...真实运行态,
       commandHistory: [...基础状态.commandHistory],
-      commandSource: 'pending_robot',
+      commandSource: 真实运行态.commandSource ?? 基础状态.commandSource,
       selectedRobot: 真实运行态.selectedRobot ?? null,
     }
   }
 
   async 执行命令(请求: 地图命令请求, robotId?: string): Promise<地图运行状态> {
     if (robotId) {
-      throw Http错误工厂.参数错误('当前已接入真机遥测，地图命令直连链路待接入', 'ROBOT_COMMAND_PENDING')
+      return this.执行机器人命令(robotId, 请求)
     }
 
     const 命令 = 请求.command
@@ -169,6 +193,41 @@ export class 地图工作台服务 {
       buffer,
       contentType: 推断图片内容类型(ext),
     }
+  }
+
+  处理机器人消息(robotId: string, message: ServerMessage): void {
+    const 缓存 = this.机器人状态缓存.get(robotId) ?? 创建空机器人运行态缓存()
+
+    if (message.type === 'robot_summary' && 是对象(message.data)) {
+      缓存.robotSummary = { ...message.data }
+      缓存.lastUpdatedAt = new Date().toISOString()
+    }
+
+    if (message.type === 'navigation_state' && 是对象(message.data)) {
+      缓存.navigationState = { ...message.data }
+      缓存.lastUpdatedAt = new Date().toISOString()
+    }
+
+    if (message.type === 'map_state' && 是对象(message.data)) {
+      缓存.mapState = { ...message.data }
+      缓存.lastUpdatedAt = new Date().toISOString()
+    }
+
+    if (message.type === 'map_response' && 是对象(message.data)) {
+      缓存.lastMapResponse = { ...message.data }
+      缓存.lastUpdatedAt = new Date().toISOString()
+      const requestId = typeof message.data.requestId === 'string' ? message.data.requestId : ''
+      if (requestId) {
+        const pending = this.待完成命令.get(requestId)
+        if (pending) {
+          this.待完成命令.delete(requestId)
+          clearTimeout(pending.timeout)
+          pending.resolve(message.data)
+        }
+      }
+    }
+
+    this.机器人状态缓存.set(robotId, 缓存)
   }
 
   private async 解析地图文件(yamlPath: string): Promise<地图元数据 | null> {
@@ -256,6 +315,7 @@ export class 地图工作台服务 {
   }
 
   private async 读取机器人运行状态(机器人: RobotRecord, 地图列表: 地图元数据[]): Promise<Partial<地图运行状态>> {
+    const wsConnected = this.是否机器人在线(机器人.uuid)
     const serverUrl = 规范化机器人服务地址(机器人)
     const 机器人信息: 选中机器人运行信息 = {
       uuid: 机器人.uuid,
@@ -263,16 +323,23 @@ export class 地图工作台服务 {
       ip: 机器人.ip,
       status: 机器人.status,
       serverUrl,
+      wsConnected,
       telemetryOnline: null,
       telemetryFetchedAt: null,
       telemetryAvailableTypes: [],
       telemetryError: null,
     }
 
+    const ws缓存 = this.机器人状态缓存.get(机器人.uuid)
+    if (wsConnected && ws缓存) {
+      return this.从机器人缓存构建运行状态(机器人信息, ws缓存, 地图列表)
+    }
+
     if (!serverUrl) {
       机器人信息.telemetryError = '未配置 robot-server 地址'
       return {
         telemetrySource: 'stub',
+        commandSource: wsConnected ? 'robot_ws' : 'pending_robot',
         selectedRobot: 机器人信息,
       }
     }
@@ -303,6 +370,7 @@ export class 地图工作台服务 {
         currentPose: 当前位姿,
         goalPose: 目标位姿,
         telemetrySource: 'robot',
+        commandSource: wsConnected ? 'robot_ws' : 'pending_robot',
         selectedRobot: 机器人信息,
       }
     } catch (error) {
@@ -315,9 +383,98 @@ export class 地图工作台服务 {
       })
       return {
         telemetrySource: 'stub',
+        commandSource: wsConnected ? 'robot_ws' : 'pending_robot',
         selectedRobot: 机器人信息,
       }
     }
+  }
+
+  private 从机器人缓存构建运行状态(
+    机器人信息: 选中机器人运行信息,
+    缓存: 机器人运行态缓存,
+    地图列表: 地图元数据[],
+  ): Partial<地图运行状态> {
+    const 定位状态 = 读取对象(缓存.robotSummary?.localization)
+    const 导航状态摘要 = 读取对象(缓存.robotSummary?.navigation)
+    const 地图状态 = 读取对象(缓存.mapState) ?? 读取对象(缓存.robotSummary?.mapping)
+    const 当前地图名 = 读取字符串(地图状态, 'current_map') ?? 读取字符串(定位状态, 'map_name')
+    const 当前地图 = 当前地图名 ? 地图列表.find((item) => item.name === 当前地图名) ?? null : null
+    const localizationState = 读取字符串(定位状态, 'state')
+    const navigationState = 读取字符串(导航状态摘要, 'state')
+    const mapState = 读取字符串(地图状态, 'state')
+    const confidence = 读取数值(定位状态, 'confidence') ?? 1
+
+    机器人信息.telemetryOnline = true
+    机器人信息.telemetryFetchedAt = 缓存.lastUpdatedAt
+    机器人信息.telemetryAvailableTypes = 可用类型列表(缓存)
+
+    return {
+      mode: 推断工作模式(mapState, localizationState, navigationState, 当前地图 ? 当前地图.id : null),
+      activeMapId: 当前地图?.id ?? null,
+      mappingActive: 是否为建图态(mapState),
+      localizationActive: 是否为定位态(localizationState),
+      currentPose: 解析平面位姿(读取对象(缓存.navigationState)?.current_pose, confidence),
+      goalPose: 解析平面位姿(读取对象(缓存.navigationState)?.current_goal, confidence),
+      telemetrySource: 'robot',
+      commandSource: 'robot_ws',
+      selectedRobot: 机器人信息,
+    }
+  }
+
+  private async 执行机器人命令(robotId: string, 请求: 地图命令请求): Promise<地图运行状态> {
+    const 机器人 = await this.机器人仓库.getRobot(robotId)
+    if (!机器人) {
+      throw Http错误工厂.未找到('未找到指定机器人', 'ROBOT_NOT_FOUND')
+    }
+
+    if (!this.是否机器人在线(robotId)) {
+      throw Http错误工厂.参数错误('机器人尚未连接到工作站业务通道', 'ROBOT_WS_OFFLINE')
+    }
+
+    const 地图列表 = await this.获取地图列表()
+    const 目标地图 = 请求.mapId ? 地图列表.find((item) => item.id === 请求.mapId) ?? null : null
+    const requestId = uuidv7()
+    const payload = 构建地图命令负载(requestId, 请求.command, 目标地图)
+
+    const responsePromise = new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.待完成命令.delete(requestId)
+        reject(Http错误工厂.参数错误('等待机器人地图命令响应超时', 'ROBOT_COMMAND_TIMEOUT'))
+      }, 5000)
+
+      this.待完成命令.set(requestId, {
+        robotId,
+        resolve,
+        reject,
+        timeout,
+      })
+    })
+
+    const sent = this.发送到机器人(robotId, {
+      type: 'map_command',
+      robotId,
+      timestamp: Date.now(),
+      data: payload,
+    })
+
+    if (!sent) {
+      const pending = this.待完成命令.get(requestId)
+      if (pending) {
+        clearTimeout(pending.timeout)
+        this.待完成命令.delete(requestId)
+      }
+      throw Http错误工厂.参数错误('机器人业务通道不可用', 'ROBOT_WS_OFFLINE')
+    }
+
+    const response = await responsePromise
+    if (response.success !== true) {
+      throw Http错误工厂.参数错误(
+        typeof response.error === 'string' ? response.error : '机器人执行地图命令失败',
+        typeof response.errorCode === 'string' ? response.errorCode : 'ROBOT_COMMAND_FAILED',
+      )
+    }
+
+    return this.获取运行状态(robotId)
   }
 }
 
@@ -353,6 +510,70 @@ async function 拉取机器人完整遥测(serverUrl: string): Promise<Record<st
     throw error
   } finally {
     clearTimeout(timeout)
+  }
+}
+
+function 创建空机器人运行态缓存(): 机器人运行态缓存 {
+  return {
+    robotSummary: null,
+    navigationState: null,
+    mapState: null,
+    lastMapResponse: null,
+    lastUpdatedAt: null,
+  }
+}
+
+function 可用类型列表(缓存: 机器人运行态缓存): string[] {
+  const types: string[] = []
+  if (缓存.robotSummary) {
+    types.push('robot_summary')
+  }
+  if (缓存.navigationState) {
+    types.push('navigation_state')
+  }
+  if (缓存.mapState) {
+    types.push('map_state')
+  }
+  if (缓存.lastMapResponse) {
+    types.push('map_response')
+  }
+  return types
+}
+
+function 构建地图命令负载(
+  requestId: string,
+  command: 地图命令类型,
+  map: 地图元数据 | null,
+): Record<string, unknown> {
+  switch (command) {
+    case 'start_mapping':
+      return {
+        requestId,
+        command: 'start_mapping',
+        map_name: map?.name,
+      }
+    case 'load_map':
+      return {
+        requestId,
+        command: 'load_map',
+        map_name: map?.name,
+      }
+    case 'start_localization':
+      return {
+        requestId,
+        command: 'start_localization',
+        map_name: map?.name,
+      }
+    case 'stop_localization':
+      return {
+        requestId,
+        command: 'stop_localization',
+      }
+    default:
+      return {
+        requestId,
+        command,
+      }
   }
 }
 
@@ -426,6 +647,10 @@ function 读取对象(value: unknown): Record<string, unknown> | null {
     return null
   }
   return value as Record<string, unknown>
+}
+
+function 是对象(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
 function 读取字符串(value: Record<string, unknown> | null | undefined, key: string): string | null {

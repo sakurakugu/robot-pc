@@ -4,3 +4,8 @@ export interface ServerMessage<TData = unknown> {
   timestamp: number
   data?: TData
 }
+
+export interface StudioSocketMessageContext {
+  role: 'ui' | 'robot'
+  robotId?: string
+}
