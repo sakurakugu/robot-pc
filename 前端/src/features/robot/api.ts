@@ -1,5 +1,5 @@
 import { http } from '@/share/api/http'
-import type { RobotAccessInfoResponse, RobotListResponse, SaveRobotPayload } from './types'
+import type { RobotAccessInfoResponse, RobotDiagnosisResponse, RobotListResponse, SaveRobotPayload } from './types'
 
 export function getRobotList(): Promise<RobotListResponse> {
   return http.get('/api/v1/robots')
@@ -15,4 +15,8 @@ export function saveRobot(payload: SaveRobotPayload): Promise<{ success: boolean
 
 export function deleteRobot(uuid: string): Promise<{ success: boolean; message: string }> {
   return http.delete(`/api/v1/robots/${uuid}`)
+}
+
+export function getRobotDiagnosis(uuid: string): Promise<RobotDiagnosisResponse> {
+  return http.get(`/api/v1/robots/${encodeURIComponent(uuid)}/diagnosis`)
 }

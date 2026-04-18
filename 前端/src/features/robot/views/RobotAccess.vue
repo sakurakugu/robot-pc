@@ -124,6 +124,74 @@
           </div>
 
           <div class="access-section">
+            <div class="section-header section-header-with-action">
+              <div>
+                <h3>连接诊断</h3>
+                <p>从当前工作站直接探测 `robot-server`、运行时、遥测和业务通道状态。</p>
+              </div>
+              <div class="section-actions">
+                <span
+                  v-if="diagnosis"
+                  class="section-caption"
+                >
+                  最近检测 {{ formatDateTime(diagnosis.checkedAt) }}
+                </span>
+                <el-button
+                  size="small"
+                  :loading="diagnosisLoading"
+                  @click="refreshDiagnosis"
+                >
+                  重新诊断
+                </el-button>
+              </div>
+            </div>
+
+            <div
+              v-if="diagnosisLoading && !diagnosis"
+              class="empty-block small"
+            >
+              <el-skeleton
+                animated
+                :rows="6"
+              />
+            </div>
+
+            <div
+              v-else-if="diagnosis"
+              class="diagnosis-grid"
+            >
+              <div
+                v-for="card in diagnosisCards"
+                :key="card.key"
+                class="diagnosis-card"
+                :class="`is-${card.tone}`"
+              >
+                <div class="diagnosis-top">
+                  <div>
+                    <strong>{{ card.title }}</strong>
+                    <p>{{ card.message }}</p>
+                  </div>
+                  <el-tag :type="card.tagType">
+                    {{ card.statusText }}
+                  </el-tag>
+                </div>
+                <code v-if="card.url">{{ card.url }}</code>
+                <div class="diagnosis-meta">
+                  <span>耗时 {{ card.durationText }}</span>
+                  <span>检测于 {{ card.checkedAtText }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-else
+              class="empty-block small"
+            >
+              <el-empty description="尚未获取诊断结果" />
+            </div>
+          </div>
+
+          <div class="access-section">
             <div class="section-header">
               <h3>robot-agent 接入地址</h3>
               <p>把机器人业务通道地址改成以下任一地址即可</p>
@@ -255,19 +323,22 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { deleteRobot, getRobotAccessInfo, getRobotList, saveRobot } from '../api'
-import type { Robot, SaveRobotPayload, StudioAccessCandidate } from '../types'
+import { deleteRobot, getRobotAccessInfo, getRobotDiagnosis, getRobotList, saveRobot } from '../api'
+import type { Robot, RobotConnectionDiagnosis, RobotDiagnosticProbe, SaveRobotPayload, StudioAccessCandidate } from '../types'
 
 const router = useRouter()
 const robots = ref<Robot[]>([])
 const accessCandidates = ref<StudioAccessCandidate[]>([])
 const selectedRobotId = ref('')
+const diagnosis = ref<RobotConnectionDiagnosis | null>(null)
+const diagnosisLoading = ref(false)
 const dialogVisible = ref(false)
 const saving = ref(false)
 const editingRobot = ref<Robot | null>(null)
 const formRef = ref<FormInstance>()
+let diagnosisRequestId = 0
 
 const form = reactive<SaveRobotPayload>({
   uuid: '',
@@ -297,6 +368,19 @@ const statusTagTypeMap: Record<Robot['status'], 'success' | 'info' | 'warning' |
 }
 
 const selectedRobot = computed(() => robots.value.find((item) => item.uuid === selectedRobotId.value) || null)
+
+const diagnosisCards = computed(() => {
+  if (!diagnosis.value) {
+    return []
+  }
+
+  return [
+    构建探测卡片('server', 'robot-server', diagnosis.value.server),
+    构建探测卡片('runtime', '运行时探活', diagnosis.value.runtime),
+    构建探测卡片('telemetry', '完整遥测', diagnosis.value.telemetry),
+    构建通道卡片(diagnosis.value),
+  ]
+})
 
 async function loadData(): Promise<void> {
   const [robotRes, accessRes] = await Promise.all([
@@ -343,8 +427,9 @@ async function submitForm(): Promise<void> {
 
   saving.value = true
   try {
+    const savedUuid = form.uuid.trim()
     await saveRobot({
-      uuid: form.uuid.trim(),
+      uuid: savedUuid,
       name: form.name.trim(),
       ip: form.ip.trim(),
       serverUrl: (form.serverUrl || '').trim() || undefined,
@@ -352,7 +437,7 @@ async function submitForm(): Promise<void> {
     dialogVisible.value = false
     resetForm()
     await loadData()
-    selectedRobotId.value = form.uuid.trim()
+    selectedRobotId.value = savedUuid
     ElMessage.success('机器人配置已保存')
   } catch (error) {
     console.error(error)
@@ -385,6 +470,155 @@ async function copyText(text: string): Promise<void> {
   await navigator.clipboard.writeText(text)
   ElMessage.success('已复制到剪贴板')
 }
+
+async function loadDiagnosis(robotId: string): Promise<void> {
+  const requestId = ++diagnosisRequestId
+  diagnosisLoading.value = true
+
+  try {
+    const response = await getRobotDiagnosis(robotId)
+    if (requestId === diagnosisRequestId) {
+      diagnosis.value = response.data.diagnosis
+    }
+  } catch (error) {
+    console.error(error)
+  } finally {
+    if (requestId === diagnosisRequestId) {
+      diagnosisLoading.value = false
+    }
+  }
+}
+
+async function refreshDiagnosis(): Promise<void> {
+  if (!selectedRobotId.value) {
+    return
+  }
+  await loadDiagnosis(selectedRobotId.value)
+}
+
+function 构建探测卡片(
+  key: 'server' | 'runtime' | 'telemetry',
+  title: string,
+  probe: RobotDiagnosticProbe,
+): {
+  key: string
+  title: string
+  message: string
+  statusText: string
+  url: string | null
+  durationText: string
+  checkedAtText: string
+  tone: 'success' | 'warning' | 'danger' | 'info'
+  tagType: 'success' | 'warning' | 'danger' | 'info'
+} {
+  const tone = 获取探测色调(probe.status)
+  return {
+    key,
+    title,
+    message: probe.message,
+    statusText: 获取探测状态文案(key, probe.status),
+    url: probe.url,
+    durationText: probe.durationMs == null ? '-' : `${probe.durationMs}ms`,
+    checkedAtText: formatDateTime(probe.checkedAt),
+    tone,
+    tagType: tone,
+  }
+}
+
+function 构建通道卡片(item: RobotConnectionDiagnosis): {
+  key: string
+  title: string
+  message: string
+  statusText: string
+  url: string | null
+  durationText: string
+  checkedAtText: string
+  tone: 'success' | 'warning' | 'danger' | 'info'
+  tagType: 'success' | 'warning' | 'danger' | 'info'
+} {
+  const connected = item.workstationWebsocket.connected
+  return {
+    key: 'workstation-websocket',
+    title: '工作站业务通道',
+    message: item.workstationWebsocket.message,
+    statusText: connected ? '已连接' : '未连接',
+    url: null,
+    durationText: '-',
+    checkedAtText: formatDateTime(item.workstationWebsocket.checkedAt),
+    tone: connected ? 'success' : 'warning',
+    tagType: connected ? 'success' : 'warning',
+  }
+}
+
+function 获取探测色调(status: RobotDiagnosticProbe['status']): 'success' | 'warning' | 'danger' | 'info' {
+  switch (status) {
+    case 'ok':
+      return 'success'
+    case 'timeout':
+    case 'invalid':
+      return 'warning'
+    case 'refused':
+    case 'error':
+      return 'danger'
+    case 'missing':
+      return 'info'
+    default:
+      return 'info'
+  }
+}
+
+function 获取探测状态文案(
+  key: 'server' | 'runtime' | 'telemetry',
+  status: RobotDiagnosticProbe['status'],
+): string {
+  if (status === 'ok') {
+    return key === 'server' ? '可达' : '可用'
+  }
+  if (status === 'timeout') {
+    return '超时'
+  }
+  if (status === 'refused') {
+    return '拒绝'
+  }
+  if (status === 'invalid') {
+    return '响应异常'
+  }
+  if (status === 'missing') {
+    return '未配置'
+  }
+  return '异常'
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) {
+    return '-'
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '-'
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+watch(selectedRobotId, async (robotId) => {
+  diagnosis.value = null
+  diagnosisLoading.value = false
+
+  if (!robotId) {
+    return
+  }
+
+  await loadDiagnosis(robotId)
+})
 
 onMounted(async () => {
   await loadData()
@@ -582,6 +816,76 @@ onMounted(async () => {
   margin-bottom: 14px;
 }
 
+.section-header-with-action,
+.section-actions,
+.diagnosis-top,
+.diagnosis-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.section-actions {
+  align-items: center;
+}
+
+.section-caption {
+  color: rgba(226, 232, 240, 0.66);
+  font-size: 12px;
+}
+
+.diagnosis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.diagnosis-card {
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.diagnosis-card.is-success {
+  border-color: rgba(74, 222, 128, 0.36);
+}
+
+.diagnosis-card.is-warning {
+  border-color: rgba(250, 204, 21, 0.36);
+}
+
+.diagnosis-card.is-danger {
+  border-color: rgba(248, 113, 113, 0.36);
+}
+
+.diagnosis-card.is-info {
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.diagnosis-top strong {
+  display: block;
+}
+
+.diagnosis-top p {
+  margin: 8px 0 0;
+  color: rgba(226, 232, 240, 0.72);
+  line-height: 1.6;
+}
+
+.diagnosis-card code {
+  display: block;
+  margin-top: 14px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.diagnosis-meta {
+  margin-top: 14px;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.58);
+}
+
 .candidate-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -611,6 +915,7 @@ onMounted(async () => {
 
 @media (max-width: 1200px) {
   .layout,
+  .diagnosis-grid,
   .candidate-list,
   .guide-grid,
   .detail-grid {
@@ -628,7 +933,9 @@ onMounted(async () => {
   }
 
   .hero-actions,
-  .detail-actions {
+  .detail-actions,
+  .section-actions,
+  .diagnosis-meta {
     flex-direction: column;
   }
 }

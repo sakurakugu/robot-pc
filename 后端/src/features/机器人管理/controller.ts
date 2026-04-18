@@ -2,11 +2,15 @@ import os from 'node:os'
 import { 处理控制器, 返回数据 } from '../../shared/http/controller'
 import { Http错误工厂 } from '../../shared/http/errors'
 import 配置 from '../../infra/config'
+import { 诊断机器人连接 } from './diagnosis'
 import type { RobotRepository } from './repository'
 import type { 保存机器人输入, 工作站接入候选 } from './types'
 
 export class 机器人控制器 {
-  constructor(private readonly 仓库: RobotRepository) {}
+  constructor(
+    private readonly 仓库: RobotRepository,
+    private readonly 是否机器人在线: (robotId: string) => boolean = () => false,
+  ) {}
 
   getRobotList = 处理控制器(async () => {
     const robots = await this.仓库.listRobots()
@@ -58,6 +62,22 @@ export class 机器人控制器 {
       businessPath: '/api/v1/web/business',
       candidates,
     })
+  })
+
+  getRobotDiagnosis = 处理控制器(async (req) => {
+    const rawUuid = req.params.uuid
+    const uuid = Array.isArray(rawUuid) ? rawUuid[0] : rawUuid
+    if (!uuid) {
+      throw Http错误工厂.参数错误('机器人 UUID 不能为空', 'ROBOT_UUID_REQUIRED')
+    }
+
+    const robot = await this.仓库.getRobot(uuid)
+    if (!robot) {
+      throw Http错误工厂.未找到('未找到指定机器人', 'ROBOT_NOT_FOUND')
+    }
+
+    const diagnosis = await 诊断机器人连接(robot, this.是否机器人在线(uuid))
+    return 返回数据({ diagnosis })
   })
 }
 

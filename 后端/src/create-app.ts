@@ -47,7 +47,7 @@ export async function createApp(): Promise<StudioAppContext> {
 
   const choreoController = new ChoreoController(choreoService)
   const mappingController = new 地图工作台控制器(mappingService)
-  const robotController = new 机器人控制器(robotRepository)
+  const robotController = new 机器人控制器(robotRepository, (robotId) => wsHost.isRobotConnected(robotId))
 
   app.use(cors())
   app.use(express.json({ limit: '20mb' }))

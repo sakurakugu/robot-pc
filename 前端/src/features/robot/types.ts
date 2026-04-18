@@ -36,3 +36,37 @@ export interface RobotListResponse {
     robots: Robot[]
   }
 }
+
+export type RobotProbeStatus = 'ok' | 'timeout' | 'refused' | 'error' | 'invalid' | 'missing'
+
+export interface RobotDiagnosticProbe {
+  status: RobotProbeStatus
+  message: string
+  url: string | null
+  httpStatus: number | null
+  durationMs: number | null
+  checkedAt: string
+}
+
+export interface RobotDiagnosticWsChannel {
+  status: 'connected' | 'disconnected'
+  connected: boolean
+  message: string
+  checkedAt: string
+}
+
+export interface RobotConnectionDiagnosis {
+  robot: Robot
+  checkedAt: string
+  server: RobotDiagnosticProbe
+  runtime: RobotDiagnosticProbe
+  telemetry: RobotDiagnosticProbe
+  workstationWebsocket: RobotDiagnosticWsChannel
+}
+
+export interface RobotDiagnosisResponse {
+  success: boolean
+  data: {
+    diagnosis: RobotConnectionDiagnosis
+  }
+}
