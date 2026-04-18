@@ -205,11 +205,19 @@
 <script setup lang="ts">
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useTheme } from '@/app/composables/useTheme'
 
 const router = useRouter()
 const activeSection = ref('appearance')
+const {
+  theme: currentTheme,
+  followSystem: currentFollowSystem,
+  setTheme,
+  setFollowSystem,
+  getSystemTheme,
+} = useTheme()
 
 const sections = [
   { id: 'appearance', title: '外观' },
@@ -221,8 +229,8 @@ const sections = [
 
 const defaultSettings = {
   // 外观
-  followSystem: true,
-  theme: 'dark' as 'light' | 'dark',
+  followSystem: false,
+  theme: currentTheme.value,
   // 时间轴
   defaultDuration: 60,
   defaultZoom: 100,
@@ -246,12 +254,21 @@ const loadSettings = () => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
-      return { ...defaultSettings, ...JSON.parse(saved) }
+      return {
+        ...defaultSettings,
+        ...JSON.parse(saved),
+        theme: currentTheme.value,
+        followSystem: currentFollowSystem.value,
+      }
     }
   } catch (e) {
     console.error('加载设置失败:', e)
   }
-  return { ...defaultSettings }
+  return {
+    ...defaultSettings,
+    theme: currentTheme.value,
+    followSystem: currentFollowSystem.value,
+  }
 }
 
 const settings = reactive(loadSettings())
@@ -269,18 +286,46 @@ const scrollTo = (id: string) => {
 }
 
 const resetSettings = () => {
-  Object.assign(settings, defaultSettings)
+  Object.assign(settings, {
+    ...defaultSettings,
+    theme: currentTheme.value,
+  })
   ElMessage.success('已重置为默认设置')
 }
 
 const saveSettings = () => {
   try {
+    setFollowSystem(settings.followSystem)
+    const nextTheme = settings.followSystem ? getSystemTheme() : settings.theme
+    settings.theme = nextTheme
+    if (!settings.followSystem) {
+      setTheme(nextTheme)
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
     ElMessage.success('设置已保存')
   } catch {
     ElMessage.error('保存设置失败')
   }
 }
+
+watch(() => settings.followSystem, (followSystem) => {
+  if (followSystem) {
+    settings.theme = getSystemTheme()
+  }
+})
+
+watch(currentTheme, (value) => {
+  if (!settings.followSystem) {
+    settings.theme = value
+  }
+})
+
+watch(currentFollowSystem, (value) => {
+  settings.followSystem = value
+  if (value) {
+    settings.theme = currentTheme.value
+  }
+})
 </script>
 
 <style scoped>

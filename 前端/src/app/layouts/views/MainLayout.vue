@@ -20,6 +20,7 @@
       </div>
       <div class="header-actions">
         <span class="page-title">{{ currentTitle }}</span>
+        <ThemeToggle />
       </div>
     </el-header>
 
@@ -86,6 +87,7 @@ import { Connection, Expand, Fold, HomeFilled, LocationInformation, VideoPlay } 
 import { Bot } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ThemeToggle from '@/app/components/ThemeToggle.vue'
 
 type AsideMode = 'expanded' | 'compact' | 'hidden'
 
@@ -209,10 +211,7 @@ onBeforeUnmount(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background:
-    radial-gradient(circle at top left, rgba(56, 189, 248, 0.12), transparent 22%),
-    radial-gradient(circle at top right, rgba(16, 185, 129, 0.1), transparent 24%),
-    linear-gradient(180deg, #f5f8fc 0%, #eef3f9 100%);
+  background: var(--studio-layout-background);
 }
 
 .layout-header {
@@ -222,9 +221,9 @@ onBeforeUnmount(() => {
   gap: 16px;
   height: 60px;
   padding: 0 22px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: var(--studio-header-background);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--studio-header-shadow);
 }
 
 .header-content {
@@ -232,7 +231,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 12px;
   min-width: 0;
-  color: #fff;
+  color: var(--studio-header-text);
 }
 
 .logo-icon {
@@ -243,29 +242,31 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
-  color: #fff;
+  color: var(--studio-header-text);
 }
 
 .home-btn {
-  color: rgba(255, 255, 255, 0.9) !important;
+  color: var(--studio-header-muted) !important;
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
 .home-btn:hover {
-  color: #fff !important;
+  color: var(--studio-header-text) !important;
   background: rgba(255, 255, 255, 0.15) !important;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
   min-width: 0;
 }
 
 .page-title {
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--studio-header-muted);
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
@@ -280,8 +281,8 @@ onBeforeUnmount(() => {
   position: relative;
   overflow: hidden;
   transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1);
-  border-right: 1px solid rgba(148, 163, 184, 0.18);
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(241, 245, 249, 0.92));
+  border-right: 1px solid var(--studio-border);
+  background: var(--studio-aside-background);
   backdrop-filter: blur(14px);
 }
 
@@ -297,7 +298,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   padding: 0 20px 16px 24px;
-  color: #0f172a;
+  color: var(--studio-text-primary);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -306,8 +307,8 @@ onBeforeUnmount(() => {
   width: 9px;
   height: 9px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #0ea5e9, #22c55e);
-  box-shadow: 0 0 0 6px rgba(14, 165, 233, 0.12);
+  background: linear-gradient(135deg, var(--studio-accent), #22c55e);
+  box-shadow: 0 0 0 6px var(--studio-accent-emphasis);
 }
 
 .aside-title-text,
@@ -331,12 +332,12 @@ onBeforeUnmount(() => {
 }
 
 .aside-menu :deep(.el-menu-item.is-active) {
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.14), rgba(34, 197, 94, 0.12));
-  color: #0f172a;
+  background: var(--studio-menu-active-background);
+  color: var(--studio-text-primary);
 }
 
 .aside-menu :deep(.el-menu-item:hover) {
-  background: rgba(148, 163, 184, 0.12);
+  background: var(--studio-menu-hover-background);
 }
 
 .aside-footer {
@@ -347,11 +348,11 @@ onBeforeUnmount(() => {
 .aside-trigger {
   width: 100%;
   justify-content: flex-start;
-  color: #334155;
+  color: var(--studio-text-secondary);
 }
 
 .aside-trigger:hover {
-  color: #0369a1;
+  color: var(--studio-accent);
 }
 
 .trigger-icon {
@@ -398,10 +399,10 @@ onBeforeUnmount(() => {
   min-width: 58px;
   height: 38px;
   border-radius: 0 14px 14px 0;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: var(--studio-panel-background-strong);
+  border: 1px solid var(--studio-border);
   border-left: none;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14);
+  box-shadow: var(--studio-shadow);
   justify-content: center;
 }
 
@@ -428,6 +429,7 @@ onBeforeUnmount(() => {
 
   .header-actions {
     width: 100%;
+    justify-content: space-between;
   }
 
   .page-title {

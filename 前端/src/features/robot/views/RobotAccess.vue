@@ -629,18 +629,15 @@ onMounted(async () => {
 .robot-access {
   min-height: 100%;
   padding: 28px;
-  background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.16), transparent 24%),
-    radial-gradient(circle at bottom right, rgba(249, 115, 22, 0.14), transparent 28%),
-    #08111c;
-  color: #edf3ff;
+  background: var(--studio-page-background);
+  color: var(--studio-text-primary);
 }
 
 .access-hero,
 .panel {
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(9, 17, 27, 0.78);
-  box-shadow: 0 24px 60px rgba(1, 7, 18, 0.32);
+  border: 1px solid var(--studio-border);
+  background: var(--studio-panel-background);
+  box-shadow: var(--studio-shadow);
   backdrop-filter: blur(14px);
 }
 
@@ -657,7 +654,7 @@ onMounted(async () => {
   font-size: 12px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #8ab4ff;
+  color: var(--studio-accent);
 }
 
 .access-hero h1 {
@@ -669,7 +666,7 @@ onMounted(async () => {
 .hero-description {
   max-width: 780px;
   margin: 14px 0 0;
-  color: rgba(232, 240, 255, 0.72);
+  color: var(--studio-text-secondary);
   line-height: 1.7;
 }
 
@@ -710,7 +707,7 @@ onMounted(async () => {
 .detail-header p,
 .section-header p {
   margin: 8px 0 0;
-  color: rgba(226, 232, 240, 0.66);
+  color: var(--studio-text-muted);
   line-height: 1.5;
 }
 
@@ -724,9 +721,9 @@ onMounted(async () => {
 .robot-card {
   width: 100%;
   padding: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid var(--studio-border);
   border-radius: 20px;
-  background: linear-gradient(180deg, rgba(12, 22, 35, 0.92), rgba(9, 17, 27, 0.78));
+  background: var(--studio-card-background);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -736,8 +733,8 @@ onMounted(async () => {
 .robot-card:hover,
 .robot-card.active {
   transform: translateY(-2px);
-  border-color: rgba(96, 165, 250, 0.76);
-  box-shadow: 0 18px 36px rgba(59, 130, 246, 0.15);
+  border-color: var(--studio-border-strong);
+  box-shadow: var(--studio-shadow-strong);
 }
 
 .robot-card-top strong {
@@ -747,7 +744,7 @@ onMounted(async () => {
 
 .robot-card-top p {
   margin: 6px 0 0;
-  color: rgba(226, 232, 240, 0.66);
+  color: var(--studio-text-muted);
 }
 
 .robot-card-meta {
@@ -756,7 +753,7 @@ onMounted(async () => {
   gap: 6px;
   margin-top: 14px;
   font-size: 12px;
-  color: rgba(226, 232, 240, 0.66);
+  color: var(--studio-text-muted);
   word-break: break-all;
 }
 
@@ -776,8 +773,8 @@ onMounted(async () => {
 .guide-card {
   padding: 18px;
   border-radius: 20px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.42);
+  border: 1px solid var(--studio-border);
+  background: var(--studio-card-background);
 }
 
 .detail-actions {
@@ -795,7 +792,7 @@ onMounted(async () => {
 .detail-item span,
 .guide-card span {
   display: block;
-  color: rgba(226, 232, 240, 0.66);
+  color: var(--studio-text-muted);
   font-size: 13px;
 }
 
@@ -830,7 +827,7 @@ onMounted(async () => {
 }
 
 .section-caption {
-  color: rgba(226, 232, 240, 0.66);
+  color: var(--studio-text-muted);
   font-size: 12px;
 }
 
@@ -843,8 +840,8 @@ onMounted(async () => {
 .diagnosis-card {
   padding: 18px;
   border-radius: 20px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.48);
+  border: 1px solid var(--studio-border);
+  background: var(--studio-card-background);
 }
 
 .diagnosis-card.is-success {
@@ -869,7 +866,7 @@ onMounted(async () => {
 
 .diagnosis-top p {
   margin: 8px 0 0;
-  color: rgba(226, 232, 240, 0.72);
+  color: var(--studio-text-secondary);
   line-height: 1.6;
 }
 
@@ -883,7 +880,7 @@ onMounted(async () => {
 .diagnosis-meta {
   margin-top: 14px;
   font-size: 12px;
-  color: rgba(226, 232, 240, 0.58);
+  color: var(--studio-text-muted);
 }
 
 .candidate-list {
@@ -898,7 +895,7 @@ onMounted(async () => {
 
 .candidate-top p {
   margin: 6px 0 0;
-  color: rgba(226, 232, 240, 0.66);
+  color: var(--studio-text-muted);
 }
 
 .guide-grid {
@@ -909,8 +906,17 @@ onMounted(async () => {
 
 .guide-card p {
   margin: 10px 0 0;
-  color: rgba(226, 232, 240, 0.72);
+  color: var(--studio-text-secondary);
   line-height: 1.7;
+}
+
+.candidate-card code,
+.guide-card code,
+.diagnosis-card code {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--studio-code-background);
+  color: var(--studio-code-text);
 }
 
 @media (max-width: 1200px) {

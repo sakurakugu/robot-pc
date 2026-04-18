@@ -194,15 +194,16 @@ const workflow = [
 .studio-home-page {
   min-height: 100%;
   padding: 24px;
-  color: #0f172a;
+  color: var(--studio-text-primary);
+  background: var(--studio-page-background);
 }
 
 .hero-panel,
 .workflow-panel,
 .entry-card {
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--studio-border);
+  background: var(--studio-panel-background);
+  box-shadow: var(--studio-shadow);
   backdrop-filter: blur(12px);
 }
 
@@ -220,7 +221,7 @@ const workflow = [
   font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #0369a1;
+  color: var(--studio-accent);
 }
 
 .hero-copy h2,
@@ -236,7 +237,7 @@ const workflow = [
 .hero-description {
   max-width: 780px;
   margin: 16px 0 0;
-  color: #475569;
+  color: var(--studio-text-secondary);
   line-height: 1.8;
 }
 
@@ -255,14 +256,12 @@ const workflow = [
 .summary-card {
   padding: 18px;
   border-radius: 22px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.92));
+  border: 1px solid var(--studio-border);
+  background: var(--studio-card-background);
 }
 
 .summary-card-primary {
-  background:
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.14), transparent 28%),
-    linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(224, 242, 254, 0.92));
+  background: var(--studio-card-background-strong);
 }
 
 .summary-card span {
@@ -270,7 +269,7 @@ const workflow = [
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #0369a1;
+  color: var(--studio-accent);
 }
 
 .summary-card strong {
@@ -281,7 +280,7 @@ const workflow = [
 
 .summary-card p {
   margin: 10px 0 0;
-  color: #475569;
+  color: var(--studio-text-secondary);
   line-height: 1.6;
 }
 
@@ -306,8 +305,8 @@ const workflow = [
 
 .entry-card:hover {
   transform: translateY(-4px);
-  border-color: rgba(14, 165, 233, 0.4);
-  box-shadow: 0 24px 48px rgba(14, 165, 233, 0.1);
+  border-color: var(--studio-border-strong);
+  box-shadow: var(--studio-shadow-strong);
 }
 
 .entry-top,
@@ -326,8 +325,8 @@ const workflow = [
   width: 52px;
   height: 52px;
   border-radius: 18px;
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.14), rgba(34, 197, 94, 0.1));
-  color: #0f172a;
+  background: var(--studio-accent-soft);
+  color: var(--studio-text-primary);
   font-size: 24px;
 }
 
@@ -339,14 +338,14 @@ const workflow = [
 
 .entry-description {
   margin: 14px 0 0;
-  color: #475569;
+  color: var(--studio-text-secondary);
   line-height: 1.7;
   min-height: 96px;
 }
 
 .entry-footer {
   margin-top: 18px;
-  color: #0369a1;
+  color: var(--studio-accent);
   font-weight: 600;
 }
 
@@ -366,8 +365,8 @@ const workflow = [
 .workflow-card {
   padding: 18px;
   border-radius: 22px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.9));
+  border: 1px solid var(--studio-border);
+  background: var(--studio-card-background);
 }
 
 .workflow-index {
@@ -378,8 +377,8 @@ const workflow = [
   height: 28px;
   padding: 0 10px;
   border-radius: 999px;
-  background: rgba(14, 165, 233, 0.1);
-  color: #0369a1;
+  background: var(--studio-accent-emphasis);
+  color: var(--studio-accent);
   font-size: 12px;
   font-weight: 700;
 }
@@ -392,7 +391,7 @@ const workflow = [
 
 .workflow-card p {
   margin: 10px 0 0;
-  color: #475569;
+  color: var(--studio-text-secondary);
   line-height: 1.7;
 }
 

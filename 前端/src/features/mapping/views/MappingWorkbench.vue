@@ -566,19 +566,16 @@ onBeforeUnmount(() => {
 .mapping-workbench {
   min-height: 100%;
   padding: 28px;
-  background:
-    radial-gradient(circle at top right, rgba(35, 161, 255, 0.18), transparent 25%),
-    radial-gradient(circle at bottom left, rgba(74, 222, 128, 0.14), transparent 28%),
-    #09111b;
-  color: #edf3ff;
+  background: var(--studio-page-background);
+  color: var(--studio-text-primary);
 }
 
 .hero-panel,
 .panel,
 .status-chip {
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(9, 17, 27, 0.76);
-  box-shadow: 0 24px 60px rgba(1, 7, 18, 0.32);
+  border: 1px solid var(--studio-border);
+  background: var(--studio-panel-background);
+  box-shadow: var(--studio-shadow);
   backdrop-filter: blur(14px);
 }
 
@@ -595,7 +592,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #8ab4ff;
+  color: var(--studio-accent);
 }
 
 .hero-panel h1 {
@@ -607,7 +604,7 @@ onBeforeUnmount(() => {
 .hero-description {
   max-width: 780px;
   margin: 14px 0 0;
-  color: rgba(232, 240, 255, 0.72);
+  color: var(--studio-text-secondary);
   line-height: 1.7;
 }
 
@@ -628,7 +625,7 @@ onBeforeUnmount(() => {
 }
 
 .robot-option small {
-  color: rgba(100, 116, 139, 0.9);
+  color: var(--studio-text-muted);
 }
 
 .status-strip {
@@ -648,7 +645,7 @@ onBeforeUnmount(() => {
 
 .status-label {
   font-size: 12px;
-  color: rgba(226, 232, 240, 0.62);
+  color: var(--studio-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -690,7 +687,7 @@ onBeforeUnmount(() => {
 
 .panel-header p {
   margin: 8px 0 0;
-  color: rgba(226, 232, 240, 0.66);
+  color: var(--studio-text-muted);
   line-height: 1.5;
 }
 
@@ -705,9 +702,9 @@ onBeforeUnmount(() => {
 .map-card {
   width: 100%;
   padding: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid var(--studio-border);
   border-radius: 20px;
-  background: linear-gradient(180deg, rgba(12, 22, 35, 0.92), rgba(9, 17, 27, 0.78));
+  background: var(--studio-card-background);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -717,8 +714,8 @@ onBeforeUnmount(() => {
 .map-card:hover,
 .map-card.active {
   transform: translateY(-2px);
-  border-color: rgba(96, 165, 250, 0.76);
-  box-shadow: 0 18px 36px rgba(59, 130, 246, 0.15);
+  border-color: var(--studio-border-strong);
+  box-shadow: var(--studio-shadow-strong);
 }
 
 .map-card-top {
@@ -735,7 +732,7 @@ onBeforeUnmount(() => {
 .map-card-top p,
 .map-card-meta {
   margin: 6px 0 0;
-  color: rgba(226, 232, 240, 0.66);
+  color: var(--studio-text-muted);
 }
 
 .map-card-meta {
@@ -769,8 +766,8 @@ onBeforeUnmount(() => {
   max-width: 100%;
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(15, 23, 42, 0.88);
-  color: #dbeafe;
+  background: var(--studio-code-background);
+  color: var(--studio-code-text);
   word-break: break-all;
 }
 
@@ -782,7 +779,7 @@ onBeforeUnmount(() => {
 .canvas-legend {
   display: flex;
   gap: 14px;
-  color: rgba(226, 232, 240, 0.76);
+  color: var(--studio-text-secondary);
   font-size: 13px;
 }
 
@@ -811,7 +808,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 6px;
   margin-bottom: 14px;
-  color: rgba(226, 232, 240, 0.6);
+  color: var(--studio-text-muted);
   font-size: 12px;
   word-break: break-all;
 }
@@ -821,10 +818,7 @@ onBeforeUnmount(() => {
   min-height: 600px;
   padding: 20px;
   border-radius: 24px;
-  background:
-    linear-gradient(90deg, rgba(59, 130, 246, 0.06) 1px, transparent 1px),
-    linear-gradient(rgba(59, 130, 246, 0.06) 1px, transparent 1px),
-    #030811;
+  background: var(--studio-canvas-background);
   background-size: 24px 24px;
   overflow: auto;
 }
@@ -884,20 +878,20 @@ onBeforeUnmount(() => {
   margin-top: 12px;
   padding: 12px 14px;
   border-radius: 14px;
-  background: rgba(59, 130, 246, 0.12);
-  color: #dbeafe;
+  background: var(--studio-info-background);
+  color: var(--studio-info-text);
   line-height: 1.6;
 }
 
 .runtime-tip-success {
-  background: rgba(16, 185, 129, 0.12);
-  color: #d1fae5;
+  background: var(--studio-success-background);
+  color: var(--studio-success-text);
 }
 
 .runtime-section {
   margin-top: 22px;
   padding-top: 22px;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  border-top: 1px solid var(--studio-border);
 }
 
 .runtime-section h3 {
@@ -919,14 +913,14 @@ onBeforeUnmount(() => {
 }
 
 .kv-item span {
-  color: rgba(226, 232, 240, 0.68);
+  color: var(--studio-text-muted);
 }
 
 .pose-card {
   padding: 14px 16px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid var(--studio-border);
   border-radius: 18px;
-  background: rgba(15, 23, 42, 0.45);
+  background: var(--studio-card-background);
 }
 
 .pose-card + .pose-card {
@@ -935,7 +929,7 @@ onBeforeUnmount(() => {
 
 .pose-title {
   margin: 0 0 8px;
-  color: rgba(226, 232, 240, 0.66);
+  color: var(--studio-text-muted);
   font-size: 13px;
 }
 
@@ -946,9 +940,9 @@ onBeforeUnmount(() => {
 
 .robot-runtime-card {
   padding: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid var(--studio-border);
   border-radius: 18px;
-  background: rgba(15, 23, 42, 0.45);
+  background: var(--studio-card-background);
 }
 
 .robot-runtime-top {
@@ -963,7 +957,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 6px;
   margin-top: 12px;
-  color: rgba(226, 232, 240, 0.68);
+  color: var(--studio-text-muted);
   font-size: 13px;
   word-break: break-all;
 }
@@ -972,8 +966,8 @@ onBeforeUnmount(() => {
   margin-top: 12px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(239, 68, 68, 0.14);
-  color: #fecaca;
+  background: var(--studio-danger-background);
+  color: var(--studio-danger-text);
   line-height: 1.6;
 }
 
@@ -985,7 +979,7 @@ onBeforeUnmount(() => {
 }
 
 .history-empty {
-  color: rgba(226, 232, 240, 0.68);
+  color: var(--studio-text-muted);
 }
 
 .history-list {
@@ -1000,13 +994,13 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 14px 16px;
   border-radius: 18px;
-  background: rgba(15, 23, 42, 0.45);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: var(--studio-card-background);
+  border: 1px solid var(--studio-border);
 }
 
 .history-item span,
 .history-item time {
-  color: rgba(226, 232, 240, 0.66);
+  color: var(--studio-text-muted);
   font-size: 13px;
 }
 
