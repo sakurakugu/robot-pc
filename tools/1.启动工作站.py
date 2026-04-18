@@ -7,6 +7,7 @@ start:      启动前端和后端开发服务
 stop:       停止前端和后端开发服务
 restart:    重启前端和后端开发服务
 status:     查看当前 PID 记录与本地端口状态
+check:      执行前后端 lint 和 typecheck
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from scripts.start.orchestrator import restart_all, start_all, status_all, stop_all
+from scripts.start.orchestrator import check_all, restart_all, start_all, status_all, stop_all
 
 
 def main() -> None:
@@ -23,7 +24,7 @@ def main() -> None:
         "command",
         nargs="?",
         default="restart",
-        choices=["start", "stop", "restart", "status"],
+        choices=["start", "stop", "restart", "status", "check"],
         help="要执行的命令",
     )
     args = parser.parse_args()
@@ -39,6 +40,9 @@ def main() -> None:
         return
     if args.command == "status":
         status_all()
+        return
+    if args.command == "check":
+        check_all()
         return
 
     print(f"不支持的命令: {args.command}", file=sys.stderr)
