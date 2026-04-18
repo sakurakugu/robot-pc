@@ -8,13 +8,12 @@
 - 局域网直连机器人
 - 本地资源、日志与项目文件管理
 
-## 规划目录
+## 当前目录
 
 ```text
 robot-studio/
 ├── 前端/          # Vue 3 + TypeScript + Vite
 ├── 后端/          # Node.js + TypeScript，本地 API / WebSocket
-├── 桌面壳/        # 后续接入 Tauri
 └── docs/          # 设计与使用文档
 ```
 
@@ -23,6 +22,24 @@ robot-studio/
 - `robot-cloud` 负责云端管理、账号权限、远程接入与资产管理
 - `robot-studio` 负责电脑端重交互、本地调试与专业工作流
 
+## 启动方式
+
+```bash
+# 前端
+cd 前端
+npm install
+npm run dev
+
+# 后端
+cd 后端
+npm install
+npm run dev
+```
+
+- 前端默认端口：`5175`
+- 后端默认端口：`9010`
+
 ## 当前阶段
 
-当前仓库已创建，后续将优先迁入编舞系统，再补地图与建图调试能力。
+当前已完成工作站基础骨架，并迁入第一批编舞系统代码。
+后续将继续补地图查看、建图过程调试和本地机器人直连能力。
