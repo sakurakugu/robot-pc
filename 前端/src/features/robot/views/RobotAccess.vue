@@ -1,27 +1,20 @@
 <template>
   <div class="robot-access">
-    <header class="access-hero">
-      <div>
-        <p class="eyebrow">
-          Robot Studio / 机器人接入
-        </p>
-        <h1>维护机器人资料并生成工作站接入地址</h1>
-        <p class="hero-description">
-          这里统一维护机器人 IP、`robot-server` 地址，并为 `robot-agent` 生成业务 WebSocket 接入地址。地图工作台和后续本地直连能力都会复用这套配置。
-        </p>
-      </div>
-      <div class="hero-actions">
-        <el-button @click="router.push('/')">
-          返回首页
-        </el-button>
+    <PageHeader
+      title="机器人管理"
+      :icon="Bot"
+      @back="router.push('/')"
+    >
+      <template #extra>
         <el-button
           type="primary"
+          :icon="Plus"
           @click="openCreateDialog"
         >
-          新增机器人
+          添加机器人
         </el-button>
-      </div>
-    </header>
+      </template>
+    </PageHeader>
 
     <div class="layout">
       <section class="panel robot-panel">
@@ -323,8 +316,11 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
+import { Bot } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import PageHeader from '@/share/components/PageHeader.vue'
 import { deleteRobot, getRobotAccessInfo, getRobotDiagnosis, getRobotList, saveRobot } from '../api'
 import type { Robot, RobotConnectionDiagnosis, RobotDiagnosticProbe, SaveRobotPayload, StudioAccessCandidate } from '../types'
 
@@ -628,52 +624,16 @@ onMounted(async () => {
 <style scoped>
 .robot-access {
   min-height: 100%;
-  padding: 28px;
-  background: var(--studio-page-background);
+  padding: 20px;
+  background: var(--el-bg-color-page);
   color: var(--studio-text-primary);
 }
 
-.access-hero,
 .panel {
   border: 1px solid var(--studio-border);
   background: var(--studio-panel-background);
   box-shadow: var(--studio-shadow);
   backdrop-filter: blur(14px);
-}
-
-.access-hero {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 26px 28px;
-  border-radius: 28px;
-}
-
-.eyebrow {
-  margin: 0 0 8px;
-  font-size: 12px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--studio-accent);
-}
-
-.access-hero h1 {
-  margin: 0;
-  font-size: 34px;
-  line-height: 1.15;
-}
-
-.hero-description {
-  max-width: 780px;
-  margin: 14px 0 0;
-  color: var(--studio-text-secondary);
-  line-height: 1.7;
-}
-
-.hero-actions {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
 }
 
 .layout {

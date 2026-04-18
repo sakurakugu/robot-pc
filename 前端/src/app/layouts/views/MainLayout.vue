@@ -331,6 +331,10 @@ onBeforeUnmount(() => {
   border-radius: 14px;
 }
 
+.layout-aside.is-compact .aside-menu :deep(.el-menu-item) {
+  margin: 4px 0;
+}
+
 .aside-menu :deep(.el-menu-item.is-active) {
   background: var(--studio-menu-active-background);
   color: var(--studio-text-primary);
@@ -366,7 +370,17 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
-.layout-aside.is-compact .aside-title-text,
+.layout-aside.is-compact .aside-title {
+  justify-content: center;
+  padding: 0 0 16px 0;
+}
+
+.layout-aside.is-compact .aside-title-text {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .layout-aside.is-compact .aside-trigger-text {
   opacity: 0;
   transform: translateX(-8px);
@@ -378,6 +392,7 @@ onBeforeUnmount(() => {
   min-width: 0 !important;
   border-right: none;
   overflow: visible;
+  z-index: 1000;
 }
 
 .layout-aside.is-hidden .aside-title,
@@ -391,7 +406,7 @@ onBeforeUnmount(() => {
   left: 0;
   bottom: 20px;
   padding: 0;
-  z-index: 30;
+  z-index: 1000;
 }
 
 .layout-aside.is-hidden .aside-trigger {

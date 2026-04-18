@@ -1,48 +1,42 @@
 <template>
   <div class="mapping-workbench">
-    <header class="hero-panel">
-      <div>
-        <p class="eyebrow">
-          Robot Studio / 地图工作台
-        </p>
-        <h1>地图查看、建图调试与定位联调</h1>
-        <p class="hero-description">
-          当前已支持读取本地地图目录，并可按机器人拉取真实 `robot-server` 遥测。命令链路仍保留明确边界，避免把真机状态和本地桩混在一起误导调试。
-        </p>
-      </div>
-      <div class="hero-actions">
-        <el-select
-          v-model="selectedRobotId"
-          class="robot-select"
-          clearable
-          filterable
-          placeholder="选择机器人读取真机遥测"
-        >
-          <el-option
-            v-for="robot in robots"
-            :key="robot.uuid"
-            :label="robot.name || robot.uuid"
-            :value="robot.uuid"
+    <PageHeader
+      title="地图工作台"
+      :icon="Map"
+      @back="goHome"
+    >
+      <template #extra>
+        <div class="header-actions">
+          <el-select
+            v-model="selectedRobotId"
+            class="robot-select"
+            clearable
+            filterable
+            placeholder="选择机器人读取真机遥测"
           >
-            <div class="robot-option">
-              <span>{{ robot.name || robot.uuid }}</span>
-              <small>{{ robot.serverUrl || robot.ip || '-' }}</small>
-            </div>
-          </el-option>
-        </el-select>
-        <el-button @click="goHome">
-          返回首页
-        </el-button>
-        <el-button
-          type="primary"
-          :loading="loading"
-          @click="refreshAll"
-        >
-          <el-icon><RefreshRight /></el-icon>
-          刷新状态
-        </el-button>
-      </div>
-    </header>
+            <el-option
+              v-for="robot in robots"
+              :key="robot.uuid"
+              :label="robot.name || robot.uuid"
+              :value="robot.uuid"
+            >
+              <div class="robot-option">
+                <span>{{ robot.name || robot.uuid }}</span>
+                <small>{{ robot.serverUrl || robot.ip || '-' }}</small>
+              </div>
+            </el-option>
+          </el-select>
+          <el-button
+            type="primary"
+            :loading="loading"
+            :icon="RefreshRight"
+            @click="refreshAll"
+          >
+            刷新状态
+          </el-button>
+        </div>
+      </template>
+    </PageHeader>
 
     <section class="status-strip">
       <div class="status-chip">
@@ -377,8 +371,10 @@
 <script setup lang="ts">
 import { RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { Map } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import PageHeader from '@/share/components/PageHeader.vue'
 import { mappingApi } from '../api'
 import type { MappingCommand, MappingRuntime, PlanarPose, StudioMap } from '../types'
 import { getRobotList } from '@/features/robot/api'
@@ -565,12 +561,11 @@ onBeforeUnmount(() => {
 <style scoped>
 .mapping-workbench {
   min-height: 100%;
-  padding: 28px;
-  background: var(--studio-page-background);
+  padding: 20px;
+  background: var(--el-bg-color-page);
   color: var(--studio-text-primary);
 }
 
-.hero-panel,
 .panel,
 .status-chip {
   border: 1px solid var(--studio-border);
@@ -579,38 +574,9 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(14px);
 }
 
-.hero-panel {
+.header-actions {
   display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 26px 28px;
-  border-radius: 28px;
-}
-
-.eyebrow {
-  margin: 0 0 8px;
-  font-size: 12px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--studio-accent);
-}
-
-.hero-panel h1 {
-  margin: 0;
-  font-size: 34px;
-  line-height: 1.15;
-}
-
-.hero-description {
-  max-width: 780px;
-  margin: 14px 0 0;
-  color: var(--studio-text-secondary);
-  line-height: 1.7;
-}
-
-.hero-actions {
-  display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
 }
 
