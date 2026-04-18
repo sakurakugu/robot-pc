@@ -6,10 +6,20 @@
         class="left-bar"
       >
         <div class="left-bar-content">
-          <div class="top-icons">
+          <div class="left-nav">
             <el-button
-              class="left-icon"
+              class="left-nav-item"
               text
+              title="返回首页"
+              @click="goBack"
+            >
+              <el-icon><ArrowLeft /></el-icon>
+            </el-button>
+            <span class="left-nav-divider" />
+            <el-button
+              class="left-nav-item left-nav-item--active"
+              text
+              title="项目列表"
             >
               <el-icon><Folder /></el-icon>
             </el-button>
@@ -271,7 +281,7 @@
 </template>
 
 <script setup lang="ts">
-import { Delete, Download, Edit, Folder, List, Loading, Menu, MoreFilled, Plus, Setting, Upload, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete, Download, Edit, Folder, List, Loading, Menu, MoreFilled, Plus, Setting, Upload, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -302,6 +312,10 @@ const formRules: FormRules = {
 
 const openSettings = () => {
   router.push('/settings')
+}
+
+const goBack = () => {
+  router.push('/')
 }
 
 const loadProjects = async () => {
@@ -492,31 +506,62 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   align-items: center;
-  padding-top: 10px;
+  padding: 10px 0 8px;
 }
 
-.left-icon {
+.left-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.left-nav-item,
+.settings-btn {
   width: 40px;
+  min-width: 40px;
   height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
   color: var(--el-text-color-secondary);
+  border-radius: 12px;
+}
+
+.left-nav-item :deep(.el-icon),
+.settings-btn :deep(.el-icon) {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.left-nav-item:hover,
+.settings-btn:hover {
+  background: var(--el-fill-color-light) !important;
+  color: var(--el-text-color-primary);
+}
+
+.left-nav-item--active {
+  background: var(--el-color-primary-light-9) !important;
+  color: var(--el-color-primary);
+}
+
+.left-nav-divider {
+  width: 24px;
+  height: 1px;
+  margin: 2px 0;
+  background: var(--el-border-color);
+  opacity: 0.9;
 }
 
 .bottom-settings {
+  margin-top: auto;
   padding-bottom: 8px;
-}
-
-.settings-btn {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--el-text-color-secondary);
 }
 
 .el-header {

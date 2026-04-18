@@ -7,12 +7,22 @@ import { robotRoutes } from '@/features/robot/router'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    name: 'StudioHome',
-    component: () => import('./views/StudioHome.vue'),
+    component: () => import('./layouts/views/MainLayout.vue'),
+    children: [
+      {
+        path: '',
+        name: 'StudioHome',
+        component: () => import('./views/StudioHome.vue'),
+        meta: {
+          title: '首页',
+          description: '查看电脑端工作站总览，并从这里进入机器人接入、地图工作台和编舞系统。',
+        },
+      },
+      ...robotRoutes,
+      ...mappingRoutes,
+    ],
   },
   ...choreoRoutes,
-  ...mappingRoutes,
-  ...robotRoutes,
   {
     path: '/:pathMatch(.*)*',
     redirect: '/',
