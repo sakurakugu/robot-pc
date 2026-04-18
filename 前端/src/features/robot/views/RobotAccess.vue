@@ -16,237 +16,240 @@
       </template>
     </PageHeader>
 
-    <div class="layout">
-      <section class="panel robot-panel">
-        <div class="panel-header">
-          <div>
-            <h2>机器人列表</h2>
-            <p>维护工作站可识别的机器人记录</p>
+    <section class="access-panel">
+      <div class="layout">
+        <section class="layout-side list-side">
+          <div class="panel-header">
+            <div>
+              <h2>机器人列表</h2>
+              <p>维护工作站可识别的机器人记录</p>
+            </div>
+            <el-tag type="info">
+              {{ robots.length }} 台
+            </el-tag>
           </div>
-          <el-tag type="info">
-            {{ robots.length }} 台
-          </el-tag>
-        </div>
+          <div class="list-divider" />
 
-        <div
-          v-if="robots.length === 0"
-          class="empty-block"
-        >
-          <el-empty description="暂无机器人记录" />
-        </div>
-
-        <div
-          v-else
-          class="robot-list"
-        >
-          <button
-            v-for="robot in robots"
-            :key="robot.uuid"
-            type="button"
-            class="robot-card"
-            :class="{ active: robot.uuid === selectedRobotId }"
-            @click="selectedRobotId = robot.uuid"
+          <div
+            v-if="robots.length === 0"
+            class="empty-block"
           >
-            <div class="robot-card-top">
-              <div>
+            <el-empty description="暂无机器人记录" />
+          </div>
+
+          <div
+            v-else
+            class="robot-list"
+          >
+            <button
+              v-for="robot in robots"
+              :key="robot.uuid"
+              type="button"
+              class="robot-row"
+              :class="{ active: robot.uuid === selectedRobotId }"
+              @click="selectedRobotId = robot.uuid"
+            >
+              <div class="robot-row-head">
                 <strong>{{ robot.name || robot.uuid }}</strong>
-                <p>{{ robot.uuid }}</p>
+                <el-tag :type="statusTagTypeMap[robot.status]">
+                  {{ statusLabelMap[robot.status] }}
+                </el-tag>
               </div>
-              <el-tag :type="statusTagTypeMap[robot.status]">
-                {{ statusLabelMap[robot.status] }}
-              </el-tag>
-            </div>
-            <div class="robot-card-meta">
-              <span>IP: {{ robot.ip || '-' }}</span>
-              <span>robot-server: {{ robot.serverUrl || '-' }}</span>
-            </div>
-          </button>
-        </div>
-      </section>
-
-      <section class="panel detail-panel">
-        <div class="panel-header">
-          <div>
-            <h2>接入详情</h2>
-            <p>展示当前机器人在工作站里的配置与接入地址</p>
+              <p class="robot-row-id">
+                {{ robot.uuid }}
+              </p>
+              <div class="robot-row-meta">
+                <span>IP: {{ robot.ip || '-' }}</span>
+                <span>robot-server: {{ robot.serverUrl || '-' }}</span>
+              </div>
+            </button>
           </div>
-        </div>
+        </section>
 
-        <div
-          v-if="!selectedRobot"
-          class="empty-block"
-        >
-          <el-empty description="请选择左侧机器人" />
-        </div>
-
-        <template v-else>
-          <div class="detail-card">
-            <div class="detail-header">
-              <div>
-                <h3>{{ selectedRobot.name || selectedRobot.uuid }}</h3>
-                <p>{{ selectedRobot.uuid }}</p>
-              </div>
-              <div class="detail-actions">
-                <el-button @click="openEditDialog(selectedRobot)">
-                  编辑
-                </el-button>
-                <el-button
-                  type="danger"
-                  plain
-                  @click="handleDelete(selectedRobot)"
-                >
-                  删除
-                </el-button>
-              </div>
-            </div>
-
-            <div class="detail-grid">
-              <div class="detail-item">
-                <span>机器人 IP</span>
-                <strong>{{ selectedRobot.ip || '-' }}</strong>
-              </div>
-              <div class="detail-item">
-                <span>robot-server</span>
-                <strong>{{ selectedRobot.serverUrl || '-' }}</strong>
-              </div>
-              <div class="detail-item">
-                <span>工作站状态</span>
-                <strong>{{ statusLabelMap[selectedRobot.status] }}</strong>
-              </div>
+        <section class="layout-side detail-side">
+          <div class="panel-header">
+            <div>
+              <h2>接入详情</h2>
+              <p>展示当前机器人在工作站里的配置与接入地址</p>
             </div>
           </div>
 
-          <div class="access-section">
-            <div class="section-header section-header-with-action">
-              <div>
-                <h3>连接诊断</h3>
-                <p>从当前工作站直接探测 `robot-server`、运行时、遥测和业务通道状态。</p>
-              </div>
-              <div class="section-actions">
-                <span
-                  v-if="diagnosis"
-                  class="section-caption"
-                >
-                  最近检测 {{ formatDateTime(diagnosis.checkedAt) }}
-                </span>
-                <el-button
-                  size="small"
-                  :loading="diagnosisLoading"
-                  @click="refreshDiagnosis"
-                >
-                  重新诊断
-                </el-button>
-              </div>
-            </div>
+          <div
+            v-if="!selectedRobot"
+            class="empty-block"
+          >
+            <el-empty description="请选择左侧机器人" />
+          </div>
 
-            <div
-              v-if="diagnosisLoading && !diagnosis"
-              class="empty-block small"
-            >
-              <el-skeleton
-                animated
-                :rows="6"
-              />
-            </div>
-
-            <div
-              v-else-if="diagnosis"
-              class="diagnosis-grid"
-            >
-              <div
-                v-for="card in diagnosisCards"
-                :key="card.key"
-                class="diagnosis-card"
-                :class="`is-${card.tone}`"
-              >
-                <div class="diagnosis-top">
-                  <div>
-                    <strong>{{ card.title }}</strong>
-                    <p>{{ card.message }}</p>
-                  </div>
-                  <el-tag :type="card.tagType">
-                    {{ card.statusText }}
-                  </el-tag>
+          <template v-else>
+            <div class="detail-card">
+              <div class="detail-header">
+                <div>
+                  <h3>{{ selectedRobot.name || selectedRobot.uuid }}</h3>
+                  <p>{{ selectedRobot.uuid }}</p>
                 </div>
-                <code v-if="card.url">{{ card.url }}</code>
-                <div class="diagnosis-meta">
-                  <span>耗时 {{ card.durationText }}</span>
-                  <span>检测于 {{ card.checkedAtText }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div
-              v-else
-              class="empty-block small"
-            >
-              <el-empty description="尚未获取诊断结果" />
-            </div>
-          </div>
-
-          <div class="access-section">
-            <div class="section-header">
-              <h3>robot-agent 接入地址</h3>
-              <p>把机器人业务通道地址改成以下任一地址即可</p>
-            </div>
-
-            <div
-              v-if="accessCandidates.length === 0"
-              class="empty-block small"
-            >
-              <el-empty description="暂无可用接入地址" />
-            </div>
-
-            <div
-              v-else
-              class="candidate-list"
-            >
-              <div
-                v-for="candidate in accessCandidates"
-                :key="candidate.businessUrlTemplate"
-                class="candidate-card"
-              >
-                <div class="candidate-top">
-                  <div>
-                    <strong>{{ candidate.label }}</strong>
-                    <p>{{ candidate.host }}</p>
-                  </div>
+                <div class="detail-actions">
+                  <el-button @click="openEditDialog(selectedRobot)">
+                    编辑
+                  </el-button>
                   <el-button
-                    size="small"
-                    @click="copyText(buildBusinessUrl(candidate))"
+                    type="danger"
+                    plain
+                    @click="handleDelete(selectedRobot)"
                   >
-                    复制地址
+                    删除
                   </el-button>
                 </div>
-                <code>{{ buildBusinessUrl(candidate) }}</code>
               </div>
-            </div>
-          </div>
 
-          <div class="access-section">
-            <div class="section-header">
-              <h3>配置建议</h3>
-              <p>避免来回翻文档，直接按这里填</p>
+              <div class="detail-grid">
+                <div class="detail-item">
+                  <span>机器人 IP</span>
+                  <strong>{{ selectedRobot.ip || '-' }}</strong>
+                </div>
+                <div class="detail-item">
+                  <span>robot-server</span>
+                  <strong>{{ selectedRobot.serverUrl || '-' }}</strong>
+                </div>
+                <div class="detail-item">
+                  <span>工作站状态</span>
+                  <strong>{{ statusLabelMap[selectedRobot.status] }}</strong>
+                </div>
+              </div>
             </div>
 
-            <div class="guide-grid">
-              <div class="guide-card">
-                <span>业务通道</span>
-                <code>{{ buildBusinessUrl(accessCandidates[0]) || '-' }}</code>
+            <div class="access-section">
+              <div class="section-header section-header-with-action">
+                <div>
+                  <h3>连接诊断</h3>
+                  <p>从当前工作站直接探测 `robot-server`、运行时、遥测和业务通道状态。</p>
+                </div>
+                <div class="section-actions">
+                  <span
+                    v-if="diagnosis"
+                    class="section-caption"
+                  >
+                    最近检测 {{ formatDateTime(diagnosis.checkedAt) }}
+                  </span>
+                  <el-button
+                    size="small"
+                    :loading="diagnosisLoading"
+                    @click="refreshDiagnosis"
+                  >
+                    重新诊断
+                  </el-button>
+                </div>
               </div>
-              <div class="guide-card">
-                <span>robot-server</span>
-                <code>{{ selectedRobot.serverUrl || `http://${selectedRobot.ip}:8080` }}</code>
+
+              <div
+                v-if="diagnosisLoading && !diagnosis"
+                class="empty-block small"
+              >
+                <el-skeleton
+                  animated
+                  :rows="6"
+                />
               </div>
-              <div class="guide-card">
-                <span>地图工作台使用</span>
-                <p>保存后可在地图工作台直接选择该机器人并读取真机状态。</p>
+
+              <div
+                v-else-if="diagnosis"
+                class="diagnosis-grid"
+              >
+                <div
+                  v-for="card in diagnosisCards"
+                  :key="card.key"
+                  class="diagnosis-card"
+                  :class="`is-${card.tone}`"
+                >
+                  <div class="diagnosis-top">
+                    <div>
+                      <strong>{{ card.title }}</strong>
+                      <p>{{ card.message }}</p>
+                    </div>
+                    <el-tag :type="card.tagType">
+                      {{ card.statusText }}
+                    </el-tag>
+                  </div>
+                  <code v-if="card.url">{{ card.url }}</code>
+                  <div class="diagnosis-meta">
+                    <span>耗时 {{ card.durationText }}</span>
+                    <span>检测于 {{ card.checkedAtText }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                v-else
+                class="empty-block small"
+              >
+                <el-empty description="尚未获取诊断结果" />
               </div>
             </div>
-          </div>
-        </template>
-      </section>
-    </div>
+
+            <div class="access-section">
+              <div class="section-header">
+                <h3>robot-agent 接入地址</h3>
+                <p>把机器人业务通道地址改成以下任一地址即可</p>
+              </div>
+
+              <div
+                v-if="accessCandidates.length === 0"
+                class="empty-block small"
+              >
+                <el-empty description="暂无可用接入地址" />
+              </div>
+
+              <div
+                v-else
+                class="candidate-list"
+              >
+                <div
+                  v-for="candidate in accessCandidates"
+                  :key="candidate.businessUrlTemplate"
+                  class="candidate-card"
+                >
+                  <div class="candidate-top">
+                    <div>
+                      <strong>{{ candidate.label }}</strong>
+                      <p>{{ candidate.host }}</p>
+                    </div>
+                    <el-button
+                      size="small"
+                      @click="copyText(buildBusinessUrl(candidate))"
+                    >
+                      复制地址
+                    </el-button>
+                  </div>
+                  <code>{{ buildBusinessUrl(candidate) }}</code>
+                </div>
+              </div>
+            </div>
+
+            <div class="access-section">
+              <div class="section-header">
+                <h3>配置建议</h3>
+                <p>避免来回翻文档，直接按这里填</p>
+              </div>
+
+              <div class="guide-grid">
+                <div class="guide-card">
+                  <span>业务通道</span>
+                  <code>{{ buildBusinessUrl(accessCandidates[0]) || '-' }}</code>
+                </div>
+                <div class="guide-card">
+                  <span>robot-server</span>
+                  <code>{{ selectedRobot.serverUrl || `http://${selectedRobot.ip}:8080` }}</code>
+                </div>
+                <div class="guide-card">
+                  <span>地图工作台使用</span>
+                  <p>保存后可在地图工作台直接选择该机器人并读取真机状态。</p>
+                </div>
+              </div>
+            </div>
+          </template>
+        </section>
+      </div>
+    </section>
 
     <el-dialog
       v-model="dialogVisible"
@@ -629,23 +632,27 @@ onMounted(async () => {
   color: var(--studio-text-primary);
 }
 
-.panel {
-  border: 1px solid var(--studio-border);
-  background: var(--studio-panel-background);
-  box-shadow: var(--studio-shadow);
-  backdrop-filter: blur(14px);
-}
-
 .layout {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr);
-  gap: 18px;
   margin-top: 18px;
 }
 
-.panel {
-  border-radius: 28px;
+.access-panel {
+  overflow: hidden;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.layout-side {
   padding: 22px;
+  min-width: 0;
+}
+
+.list-side {
+  border-right: 1px solid var(--studio-border);
 }
 
 .panel-header,
@@ -671,49 +678,76 @@ onMounted(async () => {
   line-height: 1.5;
 }
 
+.list-divider {
+  height: 1px;
+  margin-top: 16px;
+  background: var(--studio-border);
+}
+
 .robot-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 18px;
+  margin-top: 2px;
 }
 
-.robot-card {
+.robot-row {
   width: 100%;
-  padding: 16px;
-  border: 1px solid var(--studio-border);
-  border-radius: 20px;
-  background: var(--studio-card-background);
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--studio-border);
+  background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.robot-card:hover,
-.robot-card.active {
-  transform: translateY(-2px);
-  border-color: var(--studio-border-strong);
-  box-shadow: var(--studio-shadow-strong);
+.robot-row:last-child {
+  border-bottom: 0;
 }
 
-.robot-card-top strong {
-  display: block;
+.robot-row:hover {
+  background: var(--el-color-primary-light-9);
+}
+
+.robot-row.active {
+  background: var(--el-color-primary-light-8);
+  border-bottom-color: color-mix(in srgb, var(--studio-border) 45%, var(--el-color-primary) 55%);
+  box-shadow: inset 3px 0 0 var(--el-color-primary);
+  color: var(--studio-text-primary);
+}
+
+.robot-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.robot-row-head strong {
   font-size: 16px;
+  line-height: 1.4;
 }
 
-.robot-card-top p {
+.robot-row-id {
   margin: 6px 0 0;
   color: var(--studio-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-all;
 }
 
-.robot-card-meta {
+.robot-row-meta {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 14px;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 10px;
   font-size: 12px;
   color: var(--studio-text-muted);
+}
+
+.robot-row-meta span {
+  min-width: 0;
   word-break: break-all;
 }
 
@@ -886,6 +920,11 @@ onMounted(async () => {
   .guide-grid,
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .list-side {
+    border-right: 0;
+    border-bottom: 1px solid var(--studio-border);
   }
 }
 

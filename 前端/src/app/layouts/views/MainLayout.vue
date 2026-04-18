@@ -8,7 +8,7 @@
         >
           <Bot />
         </el-icon>
-        <h1>机器狗电脑端工作站</h1>
+        <h1>机器狗管理本地</h1>
         <el-button
           text
           class="home-btn"
@@ -83,11 +83,11 @@
 </template>
 
 <script setup lang="ts">
+import ThemeToggle from '@/app/components/ThemeToggle.vue'
 import { Connection, Expand, Fold, HomeFilled, LocationInformation, VideoPlay } from '@element-plus/icons-vue'
 import { Bot } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import ThemeToggle from '@/app/components/ThemeToggle.vue'
 
 type AsideMode = 'expanded' | 'compact' | 'hidden'
 

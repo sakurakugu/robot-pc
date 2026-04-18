@@ -13,7 +13,6 @@
         <component :is="currentIcon" />
       </el-icon>
       <span class="theme-trigger-label">{{ currentLabel }}</span>
-
     </button>
 
     <template #dropdown>
