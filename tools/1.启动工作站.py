@@ -22,7 +22,7 @@ def main() -> None:
     parser.add_argument(
         "command",
         nargs="?",
-        default="start",
+        default="restart",
         choices=["start", "stop", "restart", "status"],
         help="要执行的命令",
     )
