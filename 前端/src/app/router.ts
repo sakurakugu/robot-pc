@@ -15,7 +15,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('./views/StudioHome.vue'),
         meta: {
           title: '首页',
-          description: '查看电脑端工作站总览，并从这里进入机器人接入、地图工作台和编舞系统。',
+          description: '查看电脑端工作站总览，并从这里进入机器狗管理、地图工作台和编舞系统。',
         },
       },
       ...robotRoutes,

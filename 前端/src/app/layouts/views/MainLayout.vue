@@ -101,7 +101,7 @@ const expandRatio = 0.18
 
 const menuItems: MenuItem[] = [
   { key: '/', label: '首页', icon: HomeFilled },
-  { key: '/robots', label: '机器人接入', icon: Connection },
+  { key: '/robots', label: '机器人管理', icon: Connection },
   { key: '/mapping', label: '地图工作台', icon: LocationInformation },
   { key: '/choreo', label: '编舞系统', icon: VideoPlay },
 ]

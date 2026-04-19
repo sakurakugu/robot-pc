@@ -3,15 +3,23 @@ export type RobotStatus = 'online' | 'offline' | 'connecting' | 'error'
 export interface Robot {
   uuid: string
   name?: string | null
+  model?: string | null
   ip?: string | null
+  group_name?: string | null
+  tags: string[]
+  sn?: string | null
   status: RobotStatus
   serverUrl?: string | null
 }
 
 export interface SaveRobotPayload {
   uuid: string
-  name: string
-  ip: string
+  name?: string | null
+  model?: string | null
+  ip?: string | null
+  group_name?: string | null
+  tags?: string[]
+  sn?: string | null
   serverUrl?: string | null
 }
 

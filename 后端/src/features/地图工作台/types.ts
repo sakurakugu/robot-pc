@@ -39,8 +39,8 @@ export interface 地图命令记录 {
 
 export interface 选中机器人运行信息 {
   uuid: string
-  name: string
-  ip: string
+  name: string | null
+  ip: string | null
   status: 'online' | 'offline' | 'connecting' | 'error'
   serverUrl: string | null
   wsConnected: boolean

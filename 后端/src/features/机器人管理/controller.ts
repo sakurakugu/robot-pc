@@ -22,17 +22,18 @@ export class 机器人控制器 {
     if (typeof body.uuid !== 'string' || !body.uuid.trim()) {
       throw Http错误工厂.参数错误('机器人 UUID 不能为空', 'ROBOT_UUID_REQUIRED')
     }
-    if (typeof body.name !== 'string' || !body.name.trim()) {
-      throw Http错误工厂.参数错误('机器人名称不能为空', 'ROBOT_NAME_REQUIRED')
-    }
-    if (typeof body.ip !== 'string' || !body.ip.trim()) {
-      throw Http错误工厂.参数错误('机器人 IP 不能为空', 'ROBOT_IP_REQUIRED')
+    if (body.tags !== undefined && (!Array.isArray(body.tags) || body.tags.some((item) => typeof item !== 'string'))) {
+      throw Http错误工厂.参数错误('机器人标签格式不正确', 'ROBOT_TAGS_INVALID')
     }
 
     const robot = await this.仓库.saveRobot({
       uuid: body.uuid,
       name: body.name,
+      model: body.model,
       ip: body.ip,
+      group_name: body.group_name,
+      tags: body.tags,
+      sn: body.sn,
       serverUrl: body.serverUrl,
     })
 

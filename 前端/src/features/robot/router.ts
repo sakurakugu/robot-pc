@@ -6,8 +6,8 @@ export const robotRoutes: RouteRecordRaw[] = [
     name: 'RobotAccess',
     component: () => import('./views/RobotAccess.vue'),
     meta: {
-      title: '机器人接入',
-      description: '维护机器人资料、接入地址和工作站侧连接诊断结果。',
+      title: '机器狗管理',
+      description: '像手机端一样统一管理机器狗资料，并在详情里查看接入诊断。',
     },
   },
 ]

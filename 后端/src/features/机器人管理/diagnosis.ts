@@ -176,7 +176,7 @@ function 规范化机器人服务地址(机器人: RobotRecord): string | null {
   if (机器人.serverUrl && 机器人.serverUrl.trim().length > 0) {
     return 机器人.serverUrl.trim()
   }
-  if (机器人.ip.trim().length > 0) {
+  if (机器人.ip && 机器人.ip.trim().length > 0) {
     return `http://${机器人.ip}:8080`
   }
   return null

@@ -1,15 +1,23 @@
 export interface RobotRecord {
   uuid: string
-  name: string
-  ip: string
+  name: string | null
+  model: string | null
+  ip: string | null
+  group_name: string | null
+  tags: string[]
+  sn: string | null
   status: 'online' | 'offline' | 'connecting' | 'error'
   serverUrl?: string | null
 }
 
 export interface 保存机器人输入 {
   uuid: string
-  name: string
-  ip: string
+  name?: string | null
+  model?: string | null
+  ip?: string | null
+  group_name?: string | null
+  tags?: string[]
+  sn?: string | null
   serverUrl?: string | null
 }
 

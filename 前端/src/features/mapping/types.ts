@@ -35,8 +35,8 @@ export interface MappingCommandRecord {
 
 export interface SelectedRobotRuntime {
   uuid: string
-  name: string
-  ip: string
+  name: string | null
+  ip: string | null
   status: 'online' | 'offline' | 'connecting' | 'error'
   serverUrl: string | null
   wsConnected: boolean
