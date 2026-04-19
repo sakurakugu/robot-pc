@@ -59,10 +59,6 @@
         <span class="status-label">命令来源</span>
         <strong>{{ commandSourceLabelMap[runtime.commandSource] }}</strong>
       </div>
-      <div class="status-chip status-chip-wide">
-        <span class="status-label">地图目录</span>
-        <strong class="path-text">{{ runtime.mapDirectory || '-' }}</strong>
-      </div>
     </section>
 
     <div class="workbench-grid">
@@ -72,9 +68,18 @@
             <h2>地图仓库</h2>
             <p>自动扫描本地 `yaml + pgm/png` 地图</p>
           </div>
-          <el-tag type="info">
-            {{ maps.length }} 张
-          </el-tag>
+          <div class="panel-actions">
+            <el-tag type="info">
+              {{ maps.length }} 张
+            </el-tag>
+            <el-button
+              plain
+              :loading="openingDirectory"
+              @click="openMapDirectory"
+            >
+              打开目录
+            </el-button>
+          </div>
         </div>
 
         <div
@@ -382,6 +387,7 @@ import type { Robot } from '@/features/robot/types'
 
 const router = useRouter()
 const loading = ref(false)
+const openingDirectory = ref(false)
 const maps = ref<StudioMap[]>([])
 const robots = ref<Robot[]>([])
 const selectedRobotId = ref('')
@@ -473,6 +479,18 @@ async function sendCommand(command: MappingCommand, mapId?: string): Promise<voi
     ElMessage.success(response.message || '命令已发送')
   } catch (error) {
     console.error(error)
+  }
+}
+
+async function openMapDirectory(): Promise<void> {
+  openingDirectory.value = true
+  try {
+    const response = await mappingApi.openMapDirectory()
+    ElMessage.success(response.message || '地图目录已打开')
+  } catch (error) {
+    console.error(error)
+  } finally {
+    openingDirectory.value = false
   }
 }
 
@@ -616,16 +634,6 @@ onBeforeUnmount(() => {
   letter-spacing: 0.08em;
 }
 
-.path-text {
-  font-size: 13px;
-  line-height: 1.6;
-  word-break: break-all;
-}
-
-.status-chip-wide {
-  grid-column: span 2;
-}
-
 .workbench-grid {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr) 360px;
@@ -655,6 +663,12 @@ onBeforeUnmount(() => {
   margin: 8px 0 0;
   color: var(--studio-text-muted);
   line-height: 1.5;
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .map-list {
@@ -983,9 +997,6 @@ onBeforeUnmount(() => {
     grid-column: 1 / -1;
   }
 
-  .status-chip-wide {
-    grid-column: span 2;
-  }
 }
 
 @media (max-width: 980px) {
@@ -1003,12 +1014,13 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
-  .status-chip-wide {
-    grid-column: span 1;
-  }
-
   .robot-select {
     width: 100%;
+  }
+
+  .panel-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 }
 </style>

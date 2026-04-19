@@ -17,6 +17,11 @@ export class 地图工作台控制器 {
     return 返回数据(runtime)
   })
 
+  打开地图目录 = 处理控制器(async () => {
+    await this.服务.打开地图目录()
+    return 返回数据(undefined, { 消息: '地图目录已打开' })
+  })
+
   执行命令 = 处理控制器(async (req) => {
     const body = (req.body ?? {}) as 地图命令请求
     if (typeof body.command !== 'string' || body.command.length === 0) {

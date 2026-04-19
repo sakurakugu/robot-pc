@@ -19,4 +19,8 @@ export const mappingApi = {
       params: robotId ? { robotId } : undefined,
     })
   },
+
+  openMapDirectory(): Promise<{ success: boolean; message: string }> {
+    return http.post(`${BASE_URL}/open-map-directory`)
+  },
 }

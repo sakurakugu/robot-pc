@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { PNG } from 'pngjs'
@@ -115,6 +116,11 @@ export class 地图工作台服务 {
       commandSource: 真实运行态.commandSource ?? 基础状态.commandSource,
       selectedRobot: 真实运行态.selectedRobot ?? null,
     }
+  }
+
+  async 打开地图目录(): Promise<void> {
+    await fs.mkdir(this.地图目录, { recursive: true })
+    await 打开系统目录(this.地图目录)
   }
 
   async 执行命令(请求: 地图命令请求, robotId?: string): Promise<地图运行状态> {
@@ -538,6 +544,31 @@ function 可用类型列表(缓存: 机器人运行态缓存): string[] {
     types.push('map_response')
   }
   return types
+}
+
+async function 打开系统目录(targetPath: string): Promise<void> {
+  const command =
+    process.platform === 'win32'
+      ? 'explorer.exe'
+      : process.platform === 'darwin'
+        ? 'open'
+        : 'xdg-open'
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, [targetPath], {
+      detached: true,
+      stdio: 'ignore',
+    })
+
+    child.once('error', (error) => {
+      reject(new Error(`打开地图目录失败: ${error.message}`))
+    })
+
+    child.once('spawn', () => {
+      child.unref()
+      resolve()
+    })
+  })
 }
 
 function 构建地图命令负载(

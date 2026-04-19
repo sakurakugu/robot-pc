@@ -9,17 +9,9 @@
           <Bot />
         </el-icon>
         <h1>机器狗管理本地</h1>
-        <el-button
-          text
-          class="home-btn"
-          @click="goHome"
-        >
-          <el-icon><HomeFilled /></el-icon>
-          <span>首页</span>
-        </el-button>
+        <span class="page-title">{{ currentTitle }}</span>
       </div>
       <div class="header-actions">
-        <span class="page-title">{{ currentTitle }}</span>
         <ThemeToggle />
       </div>
     </el-header>
@@ -87,7 +79,7 @@ import ThemeToggle from '@/app/components/ThemeToggle.vue'
 import { Connection, Expand, Fold, HomeFilled, LocationInformation, VideoPlay } from '@element-plus/icons-vue'
 import { Bot } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 
 type AsideMode = 'expanded' | 'compact' | 'hidden'
 
@@ -98,7 +90,6 @@ type MenuItem = {
 }
 
 const route = useRoute()
-const router = useRouter()
 
 const asideMode = ref<AsideMode>('expanded')
 const autoCompact = ref(false)
@@ -191,10 +182,6 @@ function handleResize(): void {
   applyAutoCollapse()
 }
 
-function goHome(): void {
-  router.push('/')
-}
-
 onMounted(() => {
   applyAutoCollapse()
   window.addEventListener('resize', handleResize)
@@ -243,18 +230,6 @@ onBeforeUnmount(() => {
   font-size: 20px;
   font-weight: 600;
   color: var(--studio-header-text);
-}
-
-.home-btn {
-  color: var(--studio-header-muted) !important;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.home-btn:hover {
-  color: var(--studio-header-text) !important;
-  background: rgba(255, 255, 255, 0.15) !important;
 }
 
 .header-actions {
@@ -443,8 +418,7 @@ onBeforeUnmount(() => {
   }
 
   .header-actions {
-    width: 100%;
-    justify-content: space-between;
+    margin-left: auto;
   }
 
   .page-title {
