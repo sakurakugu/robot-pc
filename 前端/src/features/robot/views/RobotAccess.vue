@@ -113,8 +113,8 @@
       <el-empty description="还没有机器狗记录">
         <template #description>
           <div class="empty-description">
-            <p>这里已经替换为手机端同风格的管理页。</p>
-            <p>先新增一台机器狗，再进入详情查看接入诊断。</p>
+            <p>新增流程已对齐手机端。</p>
+            <p>可以直接做 mDNS 扫描、手动新增，或者从云端拉取到本地。</p>
           </div>
         </template>
         <el-button
@@ -430,8 +430,336 @@
     </el-drawer>
 
     <el-dialog
+      v-model="createDialogVisible"
+      title="新增机器狗"
+      width="860px"
+      @closed="handleCreateDialogClosed"
+    >
+      <div class="create-dialog-stack">
+        <p class="create-section-description">
+          电脑端新增流程已对齐手机端：支持 mDNS 扫描、手动新增，并补充从云端拉取到本地。
+        </p>
+
+        <el-tabs v-model="createTab">
+          <el-tab-pane
+            label="mDNS 扫描"
+            name="mdns"
+          >
+            <div class="create-tab-stack">
+              <div class="create-toolbar">
+                <div>
+                  <strong>自动发现局域网机器人</strong>
+                  <p>扫描 `_sparkrobot._tcp.` 服务，并自动同步本地已存在机器人的基础信息。</p>
+                </div>
+                <el-button
+                  type="primary"
+                  :loading="discoveryLoading"
+                  @click="handleDiscoverRobots"
+                >
+                  {{ discoveryLoading ? '扫描中...' : '开始扫描' }}
+                </el-button>
+              </div>
+
+              <el-alert
+                v-if="discoveryMessage"
+                :title="discoveryMessage"
+                :type="discoveryMessageType"
+                show-icon
+                :closable="false"
+              />
+
+              <div
+                v-if="newlyDiscovered.length > 0"
+                class="discovery-list"
+              >
+                <article
+                  v-for="robot in newlyDiscovered"
+                  :key="robot.uuid"
+                  class="discovery-card"
+                  :class="{ selected: selectedDiscoveredRobotId === robot.uuid }"
+                  @click="selectedDiscoveredRobotId = robot.uuid"
+                >
+                  <div class="discovery-row">
+                    <div class="discovery-main">
+                      <strong>{{ robot.name }}</strong>
+                      <p>
+                        {{ robot.model || '未提供型号' }} · {{ robot.version || '未提供版本' }}
+                      </p>
+                    </div>
+                    <el-tag type="success">
+                      {{ robot.ip }}:{{ robot.port }}
+                    </el-tag>
+                  </div>
+                  <p class="robot-uuid">
+                    {{ robot.uuid }}
+                  </p>
+                </article>
+              </div>
+
+              <el-empty
+                v-else-if="discoveryHasScanned && discoveredRobots.length === 0"
+                description="未发现机器人"
+              />
+              <el-empty
+                v-else-if="discoveryHasScanned"
+                description="扫描到的机器人都已经在本地"
+              />
+
+              <div
+                v-if="alreadyDiscovered.length > 0"
+                class="existing-section"
+              >
+                <el-button
+                  text
+                  @click="existingDiscoveredCollapsed = !existingDiscoveredCollapsed"
+                >
+                  {{ existingDiscoveredCollapsed ? `已在本地 ${alreadyDiscovered.length} 台，点击展开` : `已在本地 ${alreadyDiscovered.length} 台，点击收起` }}
+                </el-button>
+                <div
+                  v-if="!existingDiscoveredCollapsed"
+                  class="discovery-list"
+                >
+                  <article
+                    v-for="robot in alreadyDiscovered"
+                    :key="robot.uuid"
+                    class="discovery-card existing"
+                  >
+                    <div class="discovery-row">
+                      <div class="discovery-main">
+                        <strong>{{ robot.name }}</strong>
+                        <p>
+                          {{ robot.model || '未提供型号' }} · {{ robot.version || '未提供版本' }}
+                        </p>
+                      </div>
+                      <el-tag type="info">
+                        {{ robot.ip }}:{{ robot.port }}
+                      </el-tag>
+                    </div>
+                    <p class="robot-uuid">
+                      {{ robot.uuid }}
+                    </p>
+                  </article>
+                </div>
+              </div>
+
+              <div class="inline-form-row">
+                <el-input
+                  v-model="discoveryGroupName"
+                  placeholder="分组，例如：Default"
+                />
+                <el-button
+                  type="primary"
+                  :disabled="!selectedDiscoveredRobot"
+                  @click="handleAddDiscoveredRobot"
+                >
+                  添加已发现的机器人
+                </el-button>
+              </div>
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane
+            label="手动新增"
+            name="manual"
+          >
+            <div class="create-tab-stack">
+              <div class="create-toolbar">
+                <div>
+                  <strong>按手机端相同字段手动新增</strong>
+                  <p>只需要名称、机器人 IP、分组，其他字段后续可在编辑里补充。</p>
+                </div>
+              </div>
+
+              <el-form
+                label-width="84px"
+                class="simple-form"
+              >
+                <el-form-item
+                  label="名称"
+                  required
+                >
+                  <el-input
+                    v-model="manualForm.name"
+                    placeholder="例如：机器狗1"
+                  />
+                </el-form-item>
+                <el-form-item label="机器人 IP">
+                  <el-input
+                    v-model="manualForm.ip"
+                    placeholder="例如：192.168.1.110"
+                  />
+                </el-form-item>
+                <el-form-item label="分组">
+                  <el-input
+                    v-model="manualForm.group_name"
+                    placeholder="例如：Default"
+                  />
+                </el-form-item>
+              </el-form>
+
+              <div class="create-footer">
+                <el-button
+                  type="primary"
+                  :loading="manualSaving"
+                  @click="handleManualAddRobot"
+                >
+                  保存到本地
+                </el-button>
+              </div>
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane
+            label="云端拉取"
+            name="cloud"
+          >
+            <div class="create-tab-stack">
+              <template v-if="cloudImportAvailable">
+                <div class="create-toolbar">
+                  <div>
+                    <strong>从当前云端环境拉取机器人</strong>
+                    <p>使用电脑端当前登录的云端账号，把机器人资料同步到本地工作站。</p>
+                  </div>
+                  <el-button
+                    :loading="cloudLoading"
+                    @click="loadCloudRobots"
+                  >
+                    {{ cloudLoading ? '加载中...' : '刷新云端列表' }}
+                  </el-button>
+                </div>
+
+                <div class="inline-form-row">
+                  <el-input
+                    v-model="cloudGroupName"
+                    placeholder="可选：导入后统一覆盖为某个分组"
+                  />
+                  <el-button
+                    type="primary"
+                    :loading="cloudSyncing"
+                    :disabled="selectedCloudRobotIds.length === 0"
+                    @click="handleImportSelectedCloudRobots"
+                  >
+                    导入选中 {{ selectedCloudRobotIds.length > 0 ? `(${selectedCloudRobotIds.length})` : '' }}
+                  </el-button>
+                </div>
+
+                <div class="toolbar-summary">
+                  <span>云端列表 {{ cloudRobots.length }} 台</span>
+                  <span v-if="cloudLastLoadedAt">最近加载：{{ formatDateTime(cloudLastLoadedAt) }}</span>
+                </div>
+
+                <el-alert
+                  v-if="cloudMessage"
+                  :title="cloudMessage"
+                  :type="cloudMessageType"
+                  show-icon
+                  :closable="false"
+                />
+
+                <el-table
+                  v-loading="cloudLoading"
+                  :data="cloudRobots"
+                  row-key="uuid"
+                  max-height="360"
+                  @selection-change="handleCloudSelectionChange"
+                >
+                  <el-table-column
+                    type="selection"
+                    width="48"
+                  />
+                  <el-table-column
+                    label="名称"
+                    min-width="180"
+                  >
+                    <template #default="{ row }">
+                      <div class="table-main-cell">
+                        <strong>{{ row.name || row.uuid }}</strong>
+                        <span>{{ row.uuid }}</span>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column
+                    label="型号"
+                    min-width="120"
+                  >
+                    <template #default="{ row }">
+                      {{ row.model || '-' }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column
+                    label="局域网地址"
+                    min-width="150"
+                  >
+                    <template #default="{ row }">
+                      {{ 获取云端机器人局域网IP(row) || '-' }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column
+                    label="分组"
+                    min-width="120"
+                  >
+                    <template #default="{ row }">
+                      {{ row.group_name || '-' }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column
+                    label="本地状态"
+                    width="100"
+                  >
+                    <template #default="{ row }">
+                      <el-tag :type="existingRobotMap.has(row.uuid) ? 'warning' : 'success'">
+                        {{ existingRobotMap.has(row.uuid) ? '已存在' : '未导入' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column
+                    label="操作"
+                    width="100"
+                    fixed="right"
+                  >
+                    <template #default="{ row }">
+                      <el-button
+                        link
+                        type="primary"
+                        @click="handleImportSingleCloudRobot(row)"
+                      >
+                        {{ existingRobotMap.has(row.uuid) ? '同步' : '导入' }}
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+
+                <el-empty
+                  v-if="!cloudLoading && cloudRobots.length === 0"
+                  description="当前云端暂无机器人"
+                />
+              </template>
+
+              <template v-else>
+                <el-empty description="请先在个人中心配置云端地址并登录账号">
+                  <el-button
+                    type="primary"
+                    @click="router.push('/account')"
+                  >
+                    前往个人中心
+                  </el-button>
+                </el-empty>
+              </template>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+
+      <template #footer>
+        <el-button @click="createDialogVisible = false">
+          关闭
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="dialogVisible"
-      :title="editingRobot ? '编辑机器狗' : '新增机器狗'"
+      title="编辑机器狗"
       width="620px"
       @closed="resetForm"
     >
@@ -447,8 +775,7 @@
         >
           <el-input
             v-model="form.uuid"
-            :disabled="!!editingRobot"
-            placeholder="留空时自动生成"
+            disabled
           />
         </el-form-item>
         <el-form-item
@@ -515,16 +842,34 @@
 
 <script setup lang="ts">
 import PageHeader from '@/share/components/PageHeader.vue'
+import { useCloudAccountStore } from '@/features/account/store'
 import { Plus, RefreshRight, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Bot } from 'lucide-vue-next'
 import { v7 as uuidv7 } from 'uuid'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { deleteRobot, getRobotAccessInfo, getRobotDiagnosis, getRobotList, saveRobot } from '../api'
-import type { Robot, RobotConnectionDiagnosis, RobotDiagnosticProbe, SaveRobotPayload, StudioAccessCandidate } from '../types'
+import {
+  deleteRobot,
+  discoverLocalRobots,
+  fetchCloudRobotList,
+  getRobotAccessInfo,
+  getRobotDiagnosis,
+  getRobotList,
+  saveRobot,
+} from '../api'
+import type {
+  CloudRobotRecord,
+  DiscoveredRobot,
+  Robot,
+  RobotConnectionDiagnosis,
+  RobotDiagnosticProbe,
+  SaveRobotPayload,
+  StudioAccessCandidate,
+} from '../types'
 
 const router = useRouter()
+const accountStore = useCloudAccountStore()
 const robots = ref<Robot[]>([])
 const loading = ref(false)
 const detailVisible = ref(false)
@@ -532,6 +877,25 @@ const detailRobotId = ref('')
 const accessCandidates = ref<StudioAccessCandidate[]>([])
 const diagnosis = ref<RobotConnectionDiagnosis | null>(null)
 const diagnosisLoading = ref(false)
+const createDialogVisible = ref(false)
+const createTab = ref('mdns')
+const discoveryLoading = ref(false)
+const discoveryHasScanned = ref(false)
+const discoveryMessage = ref('')
+const discoveryMessageType = ref<'success' | 'info' | 'warning' | 'error'>('info')
+const discoveredRobots = ref<DiscoveredRobot[]>([])
+const selectedDiscoveredRobotId = ref('')
+const discoveryGroupName = ref('')
+const existingDiscoveredCollapsed = ref(true)
+const manualSaving = ref(false)
+const cloudLoading = ref(false)
+const cloudSyncing = ref(false)
+const cloudRobots = ref<CloudRobotRecord[]>([])
+const selectedCloudRobotIds = ref<string[]>([])
+const cloudGroupName = ref('')
+const cloudMessage = ref('')
+const cloudMessageType = ref<'success' | 'info' | 'warning' | 'error'>('info')
+const cloudLastLoadedAt = ref('')
 const dialogVisible = ref(false)
 const saving = ref(false)
 const editingRobot = ref<Robot | null>(null)
@@ -540,6 +904,12 @@ const groupFilter = ref('')
 const tagsText = ref('')
 const formRef = ref<FormInstance>()
 let diagnosisRequestId = 0
+
+const manualForm = reactive({
+  name: '',
+  ip: '',
+  group_name: '',
+})
 
 const form = reactive<SaveRobotPayload>({
   uuid: '',
@@ -569,6 +939,8 @@ const statusTagTypeMap: Record<Robot['status'], 'success' | 'info' | 'warning' |
   connecting: 'warning',
   error: 'danger',
 }
+
+const existingRobotMap = computed(() => new Map(robots.value.map((robot) => [robot.uuid, robot])))
 
 const groupOptions = computed(() => {
   const groups = new Set<string>()
@@ -615,6 +987,12 @@ const filteredRobots = computed(() => {
 const onlineCount = computed(() => robots.value.filter((robot) => robot.status === 'online').length)
 const pendingAccessCount = computed(() => robots.value.filter((robot) => !robot.ip && !robot.serverUrl).length)
 const currentDetailRobot = computed(() => robots.value.find((robot) => robot.uuid === detailRobotId.value) || null)
+const selectedDiscoveredRobot = computed(
+  () => newlyDiscovered.value.find((robot) => robot.uuid === selectedDiscoveredRobotId.value) || null,
+)
+const newlyDiscovered = computed(() => discoveredRobots.value.filter((robot) => !existingRobotMap.value.has(robot.uuid)))
+const alreadyDiscovered = computed(() => discoveredRobots.value.filter((robot) => existingRobotMap.value.has(robot.uuid)))
+const cloudImportAvailable = computed(() => Boolean(accountStore.cloudBaseUrl.value && accountStore.isAuthenticated.value))
 
 const diagnosisCards = computed(() => {
   if (!diagnosis.value) {
@@ -628,6 +1006,16 @@ const diagnosisCards = computed(() => {
     构建通道卡片(diagnosis.value),
   ]
 })
+
+watch(
+  () => [createDialogVisible.value, createTab.value, cloudImportAvailable.value] as const,
+  ([visible, tab, cloudReady]) => {
+    if (!visible || tab !== 'cloud' || !cloudReady || cloudLoading.value || cloudRobots.value.length > 0) {
+      return
+    }
+    void loadCloudRobots()
+  },
+)
 
 async function refreshRobots(): Promise<void> {
   loading.value = true
@@ -653,8 +1041,325 @@ async function ensureAccessInfoLoaded(): Promise<void> {
 }
 
 function openCreateDialog(): void {
-  editingRobot.value = null
-  dialogVisible.value = true
+  resetCreateDialogState()
+  createDialogVisible.value = true
+}
+
+function handleCreateDialogClosed(): void {
+  resetCreateDialogState()
+}
+
+function resetCreateDialogState(): void {
+  createTab.value = 'mdns'
+  discoveryHasScanned.value = false
+  discoveryMessage.value = ''
+  discoveryMessageType.value = 'info'
+  discoveredRobots.value = []
+  selectedDiscoveredRobotId.value = ''
+  discoveryGroupName.value = ''
+  existingDiscoveredCollapsed.value = true
+  manualForm.name = ''
+  manualForm.ip = ''
+  manualForm.group_name = ''
+  selectedCloudRobotIds.value = []
+  cloudGroupName.value = ''
+  cloudMessage.value = ''
+  cloudMessageType.value = 'info'
+}
+
+async function handleDiscoverRobots(): Promise<void> {
+  discoveryLoading.value = true
+  discoveryHasScanned.value = true
+  discoveryMessage.value = ''
+  selectedDiscoveredRobotId.value = ''
+  existingDiscoveredCollapsed.value = true
+
+  try {
+    const response = await discoverLocalRobots(3)
+    const list = response.data.robots.map((robot) => ({
+      ...robot,
+      name: robot.name || `机器狗-${robot.uuid.slice(0, 4)}`,
+      model: robot.model || '',
+      version: robot.version || '',
+      ip: robot.ip || '',
+      port: Number.isFinite(robot.port) ? robot.port : 8080,
+    }))
+
+    discoveredRobots.value = list
+    const updatedCount = await 同步已存在机器人基础信息(list)
+
+    if (updatedCount > 0) {
+      await refreshRobots()
+    }
+
+    const messages: string[] = []
+    if (updatedCount > 0) {
+      messages.push(`已同步 ${updatedCount} 台本地已有机器人`)
+    }
+    if (list.filter((robot) => !existingRobotMap.value.has(robot.uuid)).length > 0) {
+      messages.push(`发现 ${list.filter((robot) => !existingRobotMap.value.has(robot.uuid)).length} 台可新增机器人`)
+    }
+    if (messages.length === 0 && list.length > 0) {
+      messages.push('所有扫描结果都已经在本地，且基础信息一致')
+    }
+
+    if (messages.length > 0) {
+      discoveryMessage.value = messages.join('，')
+      discoveryMessageType.value = 'success'
+    }
+  } catch (error) {
+    discoveryMessage.value = 获取错误消息(error)
+    discoveryMessageType.value = 'error'
+  } finally {
+    discoveryLoading.value = false
+  }
+}
+
+async function 同步已存在机器人基础信息(list: DiscoveredRobot[]): Promise<number> {
+  const updates = list.reduce<Array<ReturnType<typeof saveRobot>>>((result, robot) => {
+      const existing = existingRobotMap.value.get(robot.uuid)
+      if (!existing) {
+        return result
+      }
+
+      const nextName = robot.name || existing.name
+      const nextModel = robot.model || existing.model
+      const nextIp = robot.ip || existing.ip
+      const changed = existing.name !== nextName || existing.model !== nextModel || existing.ip !== nextIp
+      if (!changed) {
+        return result
+      }
+
+      result.push(saveRobot({
+        uuid: existing.uuid,
+        name: nextName,
+        model: nextModel,
+        ip: nextIp,
+        group_name: existing.group_name,
+        tags: existing.tags,
+        sn: existing.sn,
+        serverUrl: existing.serverUrl || 构建发现机器人服务地址(robot),
+      }))
+      return result
+    }, [])
+
+  if (updates.length === 0) {
+    return 0
+  }
+
+  await Promise.all(updates)
+  return updates.length
+}
+
+async function handleAddDiscoveredRobot(): Promise<void> {
+  if (!selectedDiscoveredRobot.value) {
+    ElMessage.warning('请先选择一台机器人')
+    return
+  }
+
+  await saveRobot({
+    uuid: selectedDiscoveredRobot.value.uuid,
+    name: selectedDiscoveredRobot.value.name,
+    model: selectedDiscoveredRobot.value.model || null,
+    ip: selectedDiscoveredRobot.value.ip || null,
+    group_name: 规范化可选字段(discoveryGroupName.value),
+    serverUrl: 构建发现机器人服务地址(selectedDiscoveredRobot.value),
+  })
+
+  createDialogVisible.value = false
+  await refreshRobots()
+  ElMessage.success('已添加已发现的机器人')
+}
+
+async function handleManualAddRobot(): Promise<void> {
+  const name = 规范化可选字段(manualForm.name)
+  if (!name) {
+    ElMessage.warning('请填写机器人名称')
+    return
+  }
+
+  manualSaving.value = true
+  try {
+    const ip = 规范化可选字段(manualForm.ip)
+    await saveRobot({
+      uuid: uuidv7(),
+      name,
+      ip,
+      group_name: 规范化可选字段(manualForm.group_name),
+      serverUrl: ip ? `http://${ip}:8080` : null,
+    })
+
+    createDialogVisible.value = false
+    await refreshRobots()
+    ElMessage.success('机器狗已保存到本地')
+  } finally {
+    manualSaving.value = false
+  }
+}
+
+async function loadCloudRobots(): Promise<void> {
+  if (!cloudImportAvailable.value) {
+    cloudMessage.value = '请先在个人中心配置云端地址并登录账号'
+    cloudMessageType.value = 'warning'
+    return
+  }
+
+  cloudLoading.value = true
+  cloudMessage.value = ''
+  try {
+    const response = await fetchCloudRobotList()
+    cloudRobots.value = [...response.data.robots].sort((a, b) => {
+      const left = a.name || a.uuid
+      const right = b.name || b.uuid
+      return left.localeCompare(right, 'zh-CN')
+    })
+    cloudLastLoadedAt.value = new Date().toISOString()
+  } catch (error) {
+    cloudMessage.value = 获取错误消息(error)
+    cloudMessageType.value = 'error'
+  } finally {
+    cloudLoading.value = false
+  }
+}
+
+function handleCloudSelectionChange(selection: CloudRobotRecord[]): void {
+  selectedCloudRobotIds.value = selection.map((item) => item.uuid)
+}
+
+async function handleImportSelectedCloudRobots(): Promise<void> {
+  if (selectedCloudRobotIds.value.length === 0) {
+    ElMessage.warning('请先选择至少一台云端机器人')
+    return
+  }
+
+  const selectedRobots = cloudRobots.value.filter((robot) => selectedCloudRobotIds.value.includes(robot.uuid))
+  await 导入云端机器人(selectedRobots)
+}
+
+async function handleImportSingleCloudRobot(robot: CloudRobotRecord): Promise<void> {
+  await 导入云端机器人([robot])
+}
+
+async function 导入云端机器人(sourceRobots: CloudRobotRecord[]): Promise<void> {
+  if (sourceRobots.length === 0) {
+    return
+  }
+
+  cloudSyncing.value = true
+  cloudMessage.value = ''
+  try {
+    await Promise.all(sourceRobots.map((robot) => {
+      const existing = existingRobotMap.value.get(robot.uuid)
+      return saveRobot(构建云端保存参数(robot, existing))
+    }))
+
+    const importedCount = sourceRobots.length
+    cloudMessage.value = importedCount === 1 ? '已同步 1 台云端机器人到本地' : `已同步 ${importedCount} 台云端机器人到本地`
+    cloudMessageType.value = 'success'
+    createDialogVisible.value = false
+    await refreshRobots()
+    ElMessage.success(cloudMessage.value)
+  } catch (error) {
+    cloudMessage.value = 获取错误消息(error)
+    cloudMessageType.value = 'error'
+  } finally {
+    cloudSyncing.value = false
+  }
+}
+
+function 构建云端保存参数(robot: CloudRobotRecord, existing?: Robot): SaveRobotPayload {
+  const ip = 获取云端机器人局域网IP(robot) || existing?.ip || null
+  const serverUrl = 获取云端机器人服务地址(robot) || existing?.serverUrl || (ip ? `http://${ip}:8080` : null)
+
+  return {
+    uuid: robot.uuid,
+    name: 规范化可选字段(robot.name) || existing?.name || robot.uuid,
+    model: 规范化可选字段(robot.model) || existing?.model || null,
+    ip,
+    group_name: 规范化可选字段(cloudGroupName.value) || 规范化可选字段(robot.group_name) || existing?.group_name || null,
+    tags: 解析云端标签(robot.tags, existing?.tags),
+    sn: 规范化可选字段(robot.sn) || existing?.sn || null,
+    serverUrl,
+  }
+}
+
+function 获取云端机器人局域网IP(robot: CloudRobotRecord): string | null {
+  const metadata = 解析云端元数据(robot.metadata)
+  return 规范化可选字段(robot.local_ip)
+    || 规范化可选字段(读取元数据文本(metadata, 'local_ip'))
+    || 规范化可选字段(robot.ip)
+    || 规范化可选字段(robot.robot_ip)
+    || 规范化可选字段(读取元数据文本(metadata, 'robot_ip'))
+}
+
+function 获取云端机器人服务地址(robot: CloudRobotRecord): string | null {
+  const ip = 获取云端机器人局域网IP(robot)
+  if (!ip) {
+    return null
+  }
+
+  const metadata = 解析云端元数据(robot.metadata)
+  const rawPort = robot.local_port ?? Number.parseInt(读取元数据文本(metadata, 'local_port') || '', 10)
+  const port = Number.isFinite(rawPort) && rawPort > 0 ? rawPort : 8080
+  return `http://${ip}:${port}`
+}
+
+function 解析云端标签(tags: CloudRobotRecord['tags'], fallback: string[] = []): string[] {
+  if (Array.isArray(tags)) {
+    return tags
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+  }
+
+  if (typeof tags === 'string') {
+    try {
+      const parsed = JSON.parse(tags)
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0)
+      }
+    } catch {
+      return tags
+        .split(/[,\n，]/)
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+    }
+  }
+
+  return fallback
+}
+
+function 解析云端元数据(metadata: CloudRobotRecord['metadata']): Record<string, unknown> {
+  if (!metadata) {
+    return {}
+  }
+
+  if (typeof metadata === 'string') {
+    try {
+      const parsed = JSON.parse(metadata)
+      return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+    } catch {
+      return {}
+    }
+  }
+
+  return typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {}
+}
+
+function 读取元数据文本(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key]
+  return typeof value === 'string' ? value.trim() : null
+}
+
+function 构建发现机器人服务地址(robot: DiscoveredRobot): string | null {
+  if (!robot.ip) {
+    return null
+  }
+  const port = robot.port > 0 ? robot.port : 8080
+  return `http://${robot.ip}:${port}`
 }
 
 function openEditDialog(robot: Robot): void {
@@ -686,13 +1391,13 @@ function resetForm(): void {
 
 async function submitForm(): Promise<void> {
   const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) {
+  if (!valid || !editingRobot.value) {
     return
   }
 
   saving.value = true
   try {
-    const savedUuid = editingRobot.value?.uuid || form.uuid?.trim() || uuidv7()
+    const savedUuid = editingRobot.value.uuid
     await saveRobot({
       uuid: savedUuid,
       name: 规范化可选字段(form.name),
@@ -823,6 +1528,10 @@ function 解析标签(value: string): string[] {
     .filter((item) => item.length > 0)
 }
 
+function 获取错误消息(error: unknown): string {
+  return error instanceof Error ? error.message : '操作失败'
+}
+
 function 构建探测卡片(
   key: 'server' | 'runtime' | 'telemetry',
   title: string,
@@ -937,6 +1646,7 @@ function formatDateTime(value: string | null | undefined): string {
 }
 
 onMounted(async () => {
+  void accountStore.initialize()
   await refreshRobots()
 })
 </script>
@@ -958,7 +1668,8 @@ onMounted(async () => {
 .diagnosis-grid,
 .candidate-list,
 .guide-grid,
-.detail-info-grid {
+.detail-info-grid,
+.discovery-list {
   display: grid;
   gap: 16px;
 }
@@ -983,9 +1694,23 @@ onMounted(async () => {
 .detail-info-item,
 .diagnosis-card,
 .candidate-card,
-.guide-card {
-  border: 1px solid var(--studio-border);
+.guide-card,
+.discovery-card,
+.create-dialog-stack :deep(.el-table),
+.create-dialog-stack :deep(.el-alert) {
   border-radius: 24px;
+}
+
+.overview-panel,
+.overview-card,
+.robot-card,
+.detail-hero,
+.detail-info-item,
+.diagnosis-card,
+.candidate-card,
+.guide-card,
+.discovery-card {
+  border: 1px solid var(--studio-border);
   background: var(--studio-card-background);
   box-shadow: var(--studio-shadow);
 }
@@ -1024,22 +1749,21 @@ onMounted(async () => {
     border-color 0.2s ease;
 }
 
-.overview-card:hover {
+.overview-card:hover,
+.robot-card:hover,
+.discovery-card:hover {
   transform: translateY(-2px);
   border-color: var(--studio-border-strong);
 }
 
 .section-header p,
 .diagnosis-top p,
-.guide-card p {
+.guide-card p,
+.create-toolbar p,
+.create-section-description {
   margin: 10px 0 0;
   line-height: 1.7;
   color: var(--studio-text-secondary);
-}
-
-.robot-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--studio-border-strong);
 }
 
 .toolbar-row,
@@ -1053,7 +1777,11 @@ onMounted(async () => {
 .section-header-with-action,
 .diagnosis-top,
 .diagnosis-meta,
-.candidate-top {
+.candidate-top,
+.create-toolbar,
+.discovery-row,
+.inline-form-row,
+.create-footer {
   display: flex;
   justify-content: space-between;
   gap: 14px;
@@ -1184,7 +1912,11 @@ onMounted(async () => {
   color: var(--studio-text-secondary);
 }
 
-.detail-stack {
+.detail-stack,
+.create-dialog-stack,
+.create-tab-stack,
+.simple-form,
+.existing-section {
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -1194,12 +1926,14 @@ onMounted(async () => {
 .detail-info-item,
 .diagnosis-card,
 .candidate-card,
-.guide-card {
+.guide-card,
+.discovery-card {
   padding: 18px;
 }
 
 .detail-hero h3,
-.section-header h3 {
+.section-header h3,
+.create-toolbar strong {
   margin: 0;
 }
 
@@ -1260,7 +1994,8 @@ onMounted(async () => {
 }
 
 .diagnosis-top strong,
-.candidate-top strong {
+.candidate-top strong,
+.discovery-main strong {
   display: block;
 }
 
@@ -1281,6 +2016,58 @@ onMounted(async () => {
 
 .guide-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.create-section-description {
+  margin: 0;
+}
+
+.discovery-list {
+  grid-template-columns: 1fr;
+}
+
+.discovery-card {
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.discovery-card.selected {
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 1px rgba(64, 158, 255, 0.25);
+}
+
+.discovery-card.existing {
+  opacity: 0.78;
+}
+
+.discovery-main {
+  min-width: 0;
+}
+
+.inline-form-row {
+  align-items: center;
+}
+
+.inline-form-row :deep(.el-input) {
+  flex: 1;
+}
+
+.create-footer {
+  justify-content: flex-end;
+}
+
+.table-main-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.table-main-cell span {
+  color: var(--studio-text-muted);
+  font-size: 12px;
+  word-break: break-all;
 }
 
 @media (max-width: 1380px) {
@@ -1312,7 +2099,10 @@ onMounted(async () => {
   .detail-hero-actions,
   .section-header-with-action,
   .diagnosis-meta,
-  .candidate-top {
+  .candidate-top,
+  .create-toolbar,
+  .discovery-row,
+  .inline-form-row {
     flex-direction: column;
   }
 

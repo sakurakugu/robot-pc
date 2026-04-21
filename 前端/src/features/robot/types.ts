@@ -23,6 +23,31 @@ export interface SaveRobotPayload {
   serverUrl?: string | null
 }
 
+export interface DiscoveredRobot {
+  uuid: string
+  name: string
+  model: string
+  version: string
+  ip: string
+  port: number
+}
+
+export interface CloudRobotRecord {
+  uuid: string
+  name?: string | null
+  model?: string | null
+  version?: string | null
+  ip?: string | null
+  robot_ip?: string | null
+  local_ip?: string | null
+  local_port?: number | null
+  group_name?: string | null
+  tags?: string[] | string | null
+  sn?: string | null
+  metadata?: Record<string, unknown> | string | null
+  status: RobotStatus
+}
+
 export interface StudioAccessCandidate {
   label: string
   host: string
@@ -42,6 +67,20 @@ export interface RobotListResponse {
   success: boolean
   data: {
     robots: Robot[]
+  }
+}
+
+export interface RobotDiscoveryResponse {
+  success: boolean
+  data: {
+    robots: DiscoveredRobot[]
+  }
+}
+
+export interface CloudRobotListResponse {
+  success: boolean
+  data: {
+    robots: CloudRobotRecord[]
   }
 }
 

@@ -3,6 +3,7 @@ import { 处理控制器, 返回数据 } from '../../shared/http/controller'
 import { Http错误工厂 } from '../../shared/http/errors'
 import 配置 from '../../infra/config'
 import { 诊断机器人连接 } from './diagnosis'
+import { 扫描局域网机器人 } from './mdns-discovery'
 import type { RobotRepository } from './repository'
 import type { 保存机器人输入, 工作站接入候选 } from './types'
 
@@ -14,6 +15,12 @@ export class 机器人控制器 {
 
   getRobotList = 处理控制器(async () => {
     const robots = await this.仓库.listRobots()
+    return 返回数据({ robots })
+  })
+
+  discoverRobots = 处理控制器(async (req) => {
+    const timeoutSeconds = 解析扫描超时(req.query.timeoutSeconds)
+    const robots = await 扫描局域网机器人(timeoutSeconds)
     return 返回数据({ robots })
   })
 
@@ -107,4 +114,18 @@ function 构建工作站接入候选(requestHost: string): 工作站接入候选
       host,
       businessUrlTemplate: `ws://${host}:${配置.port}/api/v1/web/business?robotId={robotId}&role=robot`,
     }))
+}
+
+function 解析扫描超时(value: unknown): number {
+  const rawValue = Array.isArray(value) ? value[0] : value
+  if (rawValue === undefined) {
+    return 3
+  }
+
+  const parsed = Number(rawValue)
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 15) {
+    throw Http错误工厂.参数错误('扫描超时时间必须在 1 到 15 秒之间', 'ROBOT_DISCOVERY_TIMEOUT_INVALID')
+  }
+
+  return Math.floor(parsed)
 }

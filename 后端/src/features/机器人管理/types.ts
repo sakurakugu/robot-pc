@@ -21,6 +21,15 @@ export interface 保存机器人输入 {
   serverUrl?: string | null
 }
 
+export interface 局域网发现机器人 {
+  uuid: string
+  name: string
+  model: string
+  version: string
+  ip: string
+  port: number
+}
+
 export interface 工作站接入候选 {
   label: string
   host: string

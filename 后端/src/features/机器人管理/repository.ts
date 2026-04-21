@@ -9,31 +9,7 @@ export interface RobotRepository {
   saveRobot(input: 保存机器人输入): Promise<RobotRecord>
   deleteRobot(uuid: string): Promise<boolean>
 }
-
-const 示例机器人: RobotRecord[] = [
-  {
-    uuid: 'demo-x2-001',
-    name: '示例 X2 机器人',
-    model: '宇树 Go2',
-    ip: '192.168.1.101',
-    group_name: '演示组',
-    tags: ['X2', '室内'],
-    sn: 'X2-DEMO-001',
-    status: 'offline',
-    serverUrl: 'http://192.168.1.101:8080',
-  },
-  {
-    uuid: 'demo-d1-001',
-    name: '示例 D1 机器人',
-    model: '宇树 B2',
-    ip: '192.168.1.102',
-    group_name: '测试组',
-    tags: ['D1'],
-    sn: 'D1-DEMO-001',
-    status: 'offline',
-    serverUrl: 'http://192.168.1.102:8080',
-  },
-]
+const 示例机器人UUID集合 = new Set(['demo-x2-001', 'demo-d1-001'])
 
 export class 本地机器人仓库 implements RobotRepository {
   private readonly 文件路径 = path.join(配置.数据目录, 'robots.json')
@@ -93,13 +69,23 @@ export class 本地机器人仓库 implements RobotRepository {
       const raw = await fs.promises.readFile(this.文件路径, 'utf-8')
       const data = JSON.parse(raw)
       if (!Array.isArray(data)) {
-        return 示例机器人
+        await this.写入机器人列表([])
+        return []
       }
-      return data.map(规范化机器人记录)
+
+      const normalized = data
+        .map(规范化机器人记录)
+        .filter((robot) => !示例机器人UUID集合.has(robot.uuid))
+
+      if (normalized.length !== data.length) {
+        await this.写入机器人列表(normalized)
+      }
+
+      return normalized
     } catch (error: any) {
       if (error?.code === 'ENOENT') {
-        await fs.promises.writeFile(this.文件路径, JSON.stringify(示例机器人, null, 2), 'utf-8')
-        return 示例机器人
+        await this.写入机器人列表([])
+        return []
       }
       throw error
     }
