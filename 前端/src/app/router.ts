@@ -19,6 +19,15 @@ const routes: RouteRecordRaw[] = [
           description: '查看电脑端工作站总览，并从这里进入机器狗管理、地图工作台和编舞系统。',
         },
       },
+      {
+        path: 'settings',
+        name: 'AppSettings',
+        component: () => import('./views/AppSettings.vue'),
+        meta: {
+          title: '应用设置',
+          description: '配置电脑端工作站应用的本地偏好设置。',
+        },
+      },
       ...accountRoutes,
       ...robotRoutes,
       ...mappingRoutes,

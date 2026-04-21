@@ -87,7 +87,7 @@
 <script setup lang="ts">
 import { useCloudAccountStore } from '@/features/account/store'
 import ThemeToggle from '@/app/components/ThemeToggle.vue'
-import { Connection, Expand, Fold, HomeFilled, LocationInformation, UserFilled, VideoPlay } from '@element-plus/icons-vue'
+import { Connection, Expand, Fold, HomeFilled, LocationInformation, Setting, UserFilled, VideoPlay } from '@element-plus/icons-vue'
 import { Bot } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -118,6 +118,7 @@ const menuItems: MenuItem[] = [
   { key: '/robots', label: '机器人管理', icon: Connection },
   { key: '/mapping', label: '地图工作台', icon: LocationInformation },
   { key: '/choreo', label: '编舞系统', icon: VideoPlay },
+  { key: '/settings', label: '应用设置', icon: Setting },
 ]
 
 const isCompact = computed(() => asideMode.value === 'compact')
