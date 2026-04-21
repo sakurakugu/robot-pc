@@ -85,8 +85,8 @@
 </template>
 
 <script setup lang="ts">
-import { useCloudAccountStore } from '@/features/account/store'
 import ThemeToggle from '@/app/components/ThemeToggle.vue'
+import { useCloudAccountStore } from '@/features/account/store'
 import { Connection, Expand, Fold, HomeFilled, LocationInformation, Setting, UserFilled, VideoPlay } from '@element-plus/icons-vue'
 import { Bot } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
@@ -114,10 +114,10 @@ const expandRatio = 0.18
 
 const menuItems: MenuItem[] = [
   { key: '/', label: '首页', icon: HomeFilled },
-  { key: '/account', label: '个人中心', icon: UserFilled },
   { key: '/robots', label: '机器人管理', icon: Connection },
   { key: '/mapping', label: '地图工作台', icon: LocationInformation },
   { key: '/choreo', label: '编舞系统', icon: VideoPlay },
+  { key: '/account', label: '个人中心', icon: UserFilled },
   { key: '/settings', label: '应用设置', icon: Setting },
 ]
 
@@ -146,11 +146,16 @@ const triggerText = computed(() => {
 
 const currentTitle = computed(() => String(route.meta.title || '工作站'))
 const accountButtonText = computed(() => {
+  const activeEnvironmentName = accountStore.activeCloudEnvironment.value?.name
   if (accountStore.isAuthenticated.value && accountStore.user.value) {
-    return `云端：${accountStore.user.value.username}`
+    return activeEnvironmentName
+      ? `云端：${activeEnvironmentName} / ${accountStore.user.value.username}`
+      : `云端：${accountStore.user.value.username}`
   }
   if (accountStore.cloudBaseUrl.value) {
-    return `云端：${accountStore.connectionStatusText.value}`
+    return activeEnvironmentName
+      ? `云端：${activeEnvironmentName} / ${accountStore.connectionStatusText.value}`
+      : `云端：${accountStore.connectionStatusText.value}`
   }
   return '云端未配置'
 })

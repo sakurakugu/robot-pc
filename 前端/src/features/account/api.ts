@@ -3,7 +3,17 @@ import { http } from '@/share/api/http'
 import axios, { AxiosError, type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
 import { CLOUD_BASE_URL_CACHE_KEY, CLOUD_TOKEN_KEY } from './constants'
-import type { ApiResp, AuthPayload, AuthUser, LoginSession, RegisterConfig, RegisterResult, StudioUiConfig } from './types'
+import type {
+  ApiResp,
+  AuthPayload,
+  AuthUser,
+  CloudEnvironment,
+  LoginSession,
+  RegisterConfig,
+  RegisterResult,
+  StudioUiConfig,
+  SubmitFeedbackDTO,
+} from './types'
 
 type CloudRequestConfig = AxiosRequestConfig & {
   silentError?: boolean
@@ -73,7 +83,11 @@ export function getStudioUiConfig(): Promise<ApiResp<StudioUiConfig>> {
   return http.get('/api/v1/config/ui')
 }
 
-export function updateStudioUiConfig(payload: { cloudBaseUrl: string }): Promise<ApiResp<StudioUiConfig>> {
+export function updateStudioUiConfig(payload: {
+  cloudBaseUrl?: string
+  cloudEnvironments?: CloudEnvironment[]
+  activeCloudEnvironmentId?: string
+}): Promise<ApiResp<StudioUiConfig>> {
   return http.put('/api/v1/config/ui', payload)
 }
 
@@ -109,6 +123,10 @@ export function getMySessions(config?: CloudRequestConfig): Promise<ApiResp<Logi
 
 export function revokeSession(id: string, config?: CloudRequestConfig): Promise<ApiResp<{ success: boolean }>> {
   return cloudRequest.delete(`/api/v1/auth/sessions/${id}`, config).then((res) => res.data)
+}
+
+export function submitFeedback(payload: SubmitFeedbackDTO, config?: CloudRequestConfig): Promise<ApiResp<{ id: string }>> {
+  return cloudRequest.post('/api/v1/feedback', payload, config).then((res) => res.data)
 }
 
 function 读取云端地址缓存(): string {

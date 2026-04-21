@@ -34,6 +34,51 @@
           label-position="top"
           class="stack-form"
         >
+          <el-form-item label="云端环境">
+            <div class="environment-toolbar">
+              <el-select
+                v-model="selectedEnvironmentId"
+                placeholder="请选择云端环境"
+                @change="handleSelectEnvironment"
+              >
+                <el-option
+                  v-for="item in cloudEnvironments"
+                  :key="item.id"
+                  :label="item.name"
+                  :value="item.id"
+                />
+              </el-select>
+              <div class="environment-actions">
+                <el-button
+                  plain
+                  :icon="Plus"
+                  @click="openCreateEnvironmentDialog"
+                >
+                  新增环境
+                </el-button>
+                <el-button
+                  plain
+                  type="danger"
+                  :icon="Delete"
+                  :disabled="isCurrentEnvironmentDefault"
+                  @click="handleDeleteEnvironment"
+                >
+                  删除环境
+                </el-button>
+              </div>
+            </div>
+          </el-form-item>
+          <el-form-item label="环境名称">
+            <div class="environment-name-row">
+              <el-input
+                v-model="environmentNameDraft"
+                placeholder="例如 服务器环境、测试环境"
+              />
+              <el-tag :type="isCurrentEnvironmentDefault ? 'info' : 'success'">
+                {{ isCurrentEnvironmentDefault ? '默认环境' : '自定义环境' }}
+              </el-tag>
+            </div>
+          </el-form-item>
           <el-form-item label="云端地址">
             <el-input
               v-model="cloudBaseUrlDraft"
@@ -46,7 +91,7 @@
               :loading="savingConfig"
               @click="handleSaveConfig"
             >
-              保存地址
+              保存环境
             </el-button>
             <el-button
               :loading="testingConnection"
@@ -88,41 +133,61 @@
 
         <template v-else-if="isAuthenticated && user">
           <div class="profile-block">
-            <div class="profile-head">
-              <div class="profile-meta">
-                <strong>{{ user.username }}</strong>
-                <p>{{ user.nickname || '未设置昵称' }}</p>
-              </div>
-              <div class="tag-stack">
-                <el-tag :type="roleTagType">
+            <el-descriptions
+              :column="1"
+              border
+              class="profile-descriptions"
+            >
+              <el-descriptions-item label="用户 ID">
+                {{ user.id }}
+              </el-descriptions-item>
+              <el-descriptions-item label="用户名">
+                {{ user.username }}
+              </el-descriptions-item>
+              <el-descriptions-item label="昵称">
+                {{ user.nickname || '-' }}
+              </el-descriptions-item>
+              <el-descriptions-item label="邮箱">
+                {{ user.email || '-' }}
+              </el-descriptions-item>
+              <el-descriptions-item label="角色权限">
+                <el-tag
+                  :type="roleTagType"
+                  size="small"
+                >
                   {{ roleText }}
                 </el-tag>
-                <el-tag :type="approvalTagType">
+              </el-descriptions-item>
+              <el-descriptions-item label="审核状态">
+                <el-tag
+                  :type="approvalTagType"
+                  size="small"
+                >
                   {{ approvalText }}
                 </el-tag>
-              </div>
-            </div>
-
-            <div class="profile-grid">
-              <div class="profile-item">
-                <span>邮箱</span>
-                <strong>{{ user.email || '-' }}</strong>
-              </div>
-              <div class="profile-item">
-                <span>最近登录</span>
-                <strong>{{ formatDateTime(user.lastLoginAt) }}</strong>
-              </div>
-              <div class="profile-item">
-                <span>注册时间</span>
-                <strong>{{ formatDateTime(user.createdAt) }}</strong>
-              </div>
-              <div class="profile-item">
-                <span>账号状态</span>
-                <strong>{{ user.isActive ? '启用中' : '已停用' }}</strong>
-              </div>
-            </div>
+              </el-descriptions-item>
+              <el-descriptions-item label="最近登录">
+                {{ formatDateTime(user.lastLoginAt) }}
+              </el-descriptions-item>
+              <el-descriptions-item label="注册时间">
+                {{ formatDateTime(user.createdAt) }}
+              </el-descriptions-item>
+              <el-descriptions-item label="账号状态">
+                {{ user.isActive ? '启用中' : '已停用' }}
+              </el-descriptions-item>
+              <el-descriptions-item label="个人简介">
+                {{ user.bio || '暂未填写' }}
+              </el-descriptions-item>
+            </el-descriptions>
 
             <div class="form-actions">
+              <el-button
+                type="primary"
+                plain
+                @click="openFeedbackDialog"
+              >
+                提交反馈
+              </el-button>
               <el-button @click="handleRefreshProfile">
                 刷新资料
               </el-button>
@@ -308,14 +373,82 @@
         </el-table-column>
       </el-table>
     </section>
+
+    <el-dialog
+      v-model="environmentDialogVisible"
+      title="新增云端环境"
+      width="460px"
+      destroy-on-close
+    >
+      <el-form
+        label-position="top"
+        class="stack-form"
+      >
+        <el-form-item label="环境名称">
+          <el-input
+            v-model="newEnvironmentForm.name"
+            placeholder="例如 测试环境"
+          />
+        </el-form-item>
+        <el-form-item label="云端地址">
+          <el-input
+            v-model="newEnvironmentForm.baseUrl"
+            placeholder="例如 http://192.168.1.10:9000"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="environmentDialogVisible = false">
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="creatingEnvironment"
+          @click="handleCreateEnvironment"
+        >
+          保存并启用
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="feedbackDialogVisible"
+      title="提交反馈"
+      width="520px"
+      destroy-on-close
+    >
+      <el-input
+        v-model="feedbackContent"
+        type="textarea"
+        :rows="6"
+        maxlength="1000"
+        show-word-limit
+        placeholder="请输入反馈内容"
+      />
+      <template #footer>
+        <el-button @click="feedbackDialogVisible = false">
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="feedbackSubmitting"
+          :disabled="!feedbackContent.trim()"
+          @click="handleSubmitFeedback"
+        >
+          提交
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import { submitFeedback } from '@/features/account/api'
+import type { CloudEnvironment, StudioUiConfig } from '@/features/account/types'
 import { useCloudAccountStore } from '@/features/account/store'
 import PageHeader from '@/share/components/PageHeader.vue'
-import { RefreshRight, UserFilled } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { Delete, Plus, RefreshRight, UserFilled } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -323,11 +456,18 @@ const router = useRouter()
 const accountStore = useCloudAccountStore()
 
 const activeTab = ref<'login' | 'register'>('login')
-const cloudBaseUrlDraft = ref(accountStore.cloudBaseUrl.value)
+const selectedEnvironmentId = ref(accountStore.activeCloudEnvironmentId.value)
+const environmentNameDraft = ref(accountStore.activeCloudEnvironment.value?.name || '')
+const cloudBaseUrlDraft = ref(accountStore.activeCloudEnvironment.value?.baseUrl || '')
 const savingConfig = ref(false)
 const testingConnection = ref(false)
 const submittingAuth = ref(false)
 const pageLoading = ref(false)
+const environmentDialogVisible = ref(false)
+const creatingEnvironment = ref(false)
+const feedbackDialogVisible = ref(false)
+const feedbackContent = ref('')
+const feedbackSubmitting = ref(false)
 
 const loginForm = reactive({
   username: '',
@@ -339,7 +479,14 @@ const registerForm = reactive({
   password: '',
 })
 
+const newEnvironmentForm = reactive({
+  name: '',
+  baseUrl: '',
+})
+
+const cloudEnvironments = computed(() => accountStore.cloudEnvironments.value)
 const cloudBaseUrl = computed(() => accountStore.cloudBaseUrl.value)
+const activeCloudEnvironmentId = computed(() => accountStore.activeCloudEnvironmentId.value)
 const user = computed(() => accountStore.user.value)
 const sessions = computed(() => accountStore.sessions.value)
 const registerEnabled = computed(() => accountStore.registerEnabled.value)
@@ -347,6 +494,7 @@ const registerApprovalRequired = computed(() => accountStore.registerApprovalReq
 const isAuthenticated = computed(() => accountStore.isAuthenticated.value)
 const connectionStatusText = computed(() => accountStore.connectionStatusText.value)
 const connectionMessage = computed(() => accountStore.connectionMessage.value)
+const isCurrentEnvironmentDefault = computed(() => 是否默认环境(selectedEnvironmentId.value))
 
 const connectionTagType = computed(() => {
   switch (accountStore.connectionState.value) {
@@ -426,9 +574,15 @@ const approvalTagType = computed(() => {
   }
 })
 
-watch(cloudBaseUrl, (value) => {
-  cloudBaseUrlDraft.value = value
-}, { immediate: true })
+watch(
+  [cloudEnvironments, activeCloudEnvironmentId],
+  ([environments, activeId]) => {
+    const nextId = activeId || environments[0]?.id || ''
+    selectedEnvironmentId.value = nextId
+    同步当前环境草稿(environments, nextId)
+  },
+  { immediate: true },
+)
 
 async function refreshPage(): Promise<void> {
   pageLoading.value = true
@@ -447,28 +601,128 @@ async function refreshPage(): Promise<void> {
 }
 
 async function handleSaveConfig(): Promise<void> {
+  const normalizedEnvironment = 构建当前环境草稿()
+  if (!normalizedEnvironment) {
+    return
+  }
+
   savingConfig.value = true
   try {
-    const config = await accountStore.saveCloudBaseUrl(cloudBaseUrlDraft.value)
-    cloudBaseUrlDraft.value = config.cloudBaseUrl
-    ElMessage.success(config.cloudBaseUrl ? '云端地址已保存' : '已清空云端地址')
+    const config = await accountStore.saveCloudEnvironmentConfig({
+      cloudEnvironments: 替换当前环境(normalizedEnvironment),
+      activeCloudEnvironmentId: selectedEnvironmentId.value,
+    })
+    应用配置到草稿(config)
+    ElMessage.success('云端环境已保存')
   } finally {
     savingConfig.value = false
   }
 }
 
 async function handleTestConnection(): Promise<void> {
+  const normalizedEnvironment = 构建当前环境草稿()
+  if (!normalizedEnvironment) {
+    return
+  }
+
   testingConnection.value = true
   try {
-    await accountStore.saveCloudBaseUrl(cloudBaseUrlDraft.value)
-    const connected = await accountStore.checkCloudConnection(false)
-    if (!connected) {
+    await accountStore.saveCloudEnvironmentConfig({
+      cloudEnvironments: 替换当前环境(normalizedEnvironment),
+      activeCloudEnvironmentId: selectedEnvironmentId.value,
+    })
+    if (accountStore.connectionState.value !== 'connected') {
       return
     }
     ElMessage.success('云端连接正常')
   } finally {
     testingConnection.value = false
   }
+}
+
+async function handleSelectEnvironment(id: string): Promise<void> {
+  if (!id || id === activeCloudEnvironmentId.value) {
+    return
+  }
+
+  try {
+    const config = await accountStore.saveCloudEnvironmentConfig({
+      cloudEnvironments: cloudEnvironments.value,
+      activeCloudEnvironmentId: id,
+    })
+    应用配置到草稿(config)
+  } catch {
+    selectedEnvironmentId.value = activeCloudEnvironmentId.value
+    同步当前环境草稿(cloudEnvironments.value, activeCloudEnvironmentId.value)
+  }
+}
+
+function openCreateEnvironmentDialog(): void {
+  newEnvironmentForm.name = ''
+  newEnvironmentForm.baseUrl = ''
+  environmentDialogVisible.value = true
+}
+
+async function handleCreateEnvironment(): Promise<void> {
+  const name = newEnvironmentForm.name.trim()
+  const baseUrl = 规范化云端地址(newEnvironmentForm.baseUrl)
+
+  if (!name || !baseUrl) {
+    ElMessage.warning('请输入环境名称和云端地址')
+    return
+  }
+
+  creatingEnvironment.value = true
+  try {
+    const nextEnvironment: CloudEnvironment = {
+      id: `custom-${Date.now()}`,
+      name,
+      baseUrl,
+    }
+    const config = await accountStore.saveCloudEnvironmentConfig({
+      cloudEnvironments: [...cloudEnvironments.value, nextEnvironment],
+      activeCloudEnvironmentId: nextEnvironment.id,
+    })
+    应用配置到草稿(config)
+    environmentDialogVisible.value = false
+    ElMessage.success('云端环境已新增')
+  } finally {
+    creatingEnvironment.value = false
+  }
+}
+
+async function handleDeleteEnvironment(): Promise<void> {
+  const currentEnvironment = cloudEnvironments.value.find((item) => item.id === selectedEnvironmentId.value)
+  if (!currentEnvironment) {
+    ElMessage.warning('当前环境不存在')
+    return
+  }
+  if (是否默认环境(currentEnvironment.id)) {
+    ElMessage.warning('默认环境不允许删除')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(`确定删除云端环境「${currentEnvironment.name}」吗？`, '删除环境', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+
+  const nextEnvironments = cloudEnvironments.value.filter((item) => item.id !== currentEnvironment.id)
+  const fallbackEnvironmentId = activeCloudEnvironmentId.value === currentEnvironment.id
+    ? nextEnvironments[0]?.id || ''
+    : activeCloudEnvironmentId.value
+
+  const config = await accountStore.saveCloudEnvironmentConfig({
+    cloudEnvironments: nextEnvironments,
+    activeCloudEnvironmentId: fallbackEnvironmentId,
+  })
+  应用配置到草稿(config)
+  ElMessage.success('云端环境已删除')
 }
 
 async function handleLogin(): Promise<void> {
@@ -523,6 +777,30 @@ async function handleRefreshProfile(): Promise<void> {
   ElMessage.success('账号资料已刷新')
 }
 
+function openFeedbackDialog(): void {
+  feedbackContent.value = ''
+  feedbackDialogVisible.value = true
+}
+
+async function handleSubmitFeedback(): Promise<void> {
+  const content = feedbackContent.value.trim()
+  if (!content || feedbackSubmitting.value) {
+    return
+  }
+
+  feedbackSubmitting.value = true
+  try {
+    await submitFeedback({ content })
+    ElMessage.success('反馈提交成功')
+    feedbackDialogVisible.value = false
+    feedbackContent.value = ''
+  } catch (error: any) {
+    ElMessage.error(error?.message || '反馈提交失败')
+  } finally {
+    feedbackSubmitting.value = false
+  }
+}
+
 async function handleLogout(): Promise<void> {
   await accountStore.logout()
   ElMessage.success('已退出当前账号')
@@ -569,6 +847,50 @@ function formatDateTime(value: string | null | undefined): string {
 }
 
 void accountStore.initialize()
+
+function 同步当前环境草稿(environments: CloudEnvironment[], environmentId: string): void {
+  const currentEnvironment = environments.find((item) => item.id === environmentId) || environments[0]
+  environmentNameDraft.value = currentEnvironment?.name || ''
+  cloudBaseUrlDraft.value = currentEnvironment?.baseUrl || ''
+}
+
+function 构建当前环境草稿(): CloudEnvironment | null {
+  const environmentId = selectedEnvironmentId.value
+  const name = environmentNameDraft.value.trim()
+  const baseUrl = 规范化云端地址(cloudBaseUrlDraft.value)
+
+  if (!environmentId) {
+    ElMessage.warning('请先选择云端环境')
+    return null
+  }
+  if (!name || !baseUrl) {
+    ElMessage.warning('环境名称和云端地址不能为空')
+    return null
+  }
+
+  return {
+    id: environmentId,
+    name,
+    baseUrl,
+  }
+}
+
+function 替换当前环境(nextEnvironment: CloudEnvironment): CloudEnvironment[] {
+  return cloudEnvironments.value.map((item) => (item.id === nextEnvironment.id ? nextEnvironment : item))
+}
+
+function 应用配置到草稿(config: StudioUiConfig): void {
+  selectedEnvironmentId.value = config.activeCloudEnvironmentId
+  同步当前环境草稿(config.cloudEnvironments, config.activeCloudEnvironmentId)
+}
+
+function 是否默认环境(id: string): boolean {
+  return id === 'server' || id === 'local'
+}
+
+function 规范化云端地址(value: string): string {
+  return value.trim().replace(/\/+$/, '')
+}
 </script>
 
 <style scoped>
@@ -579,8 +901,7 @@ void accountStore.initialize()
 }
 
 .header-actions,
-.page-grid,
-.profile-grid {
+.page-grid {
   display: grid;
   gap: 16px;
 }
@@ -593,22 +914,14 @@ void accountStore.initialize()
   grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
 }
 
-.panel-card,
-.profile-item {
+.panel-card {
   border: 1px solid var(--studio-border);
   border-radius: 24px;
   background: var(--studio-card-background);
   box-shadow: var(--studio-shadow);
 }
 
-.profile-item span {
-  display: block;
-  color: var(--studio-text-muted);
-  font-size: 13px;
-}
-
-.section-header p,
-.profile-head p {
+.section-header p {
   margin: 8px 0 0;
   color: var(--studio-text-secondary);
   line-height: 1.6;
@@ -623,8 +936,7 @@ void accountStore.initialize()
 }
 
 .section-header,
-.form-actions,
-.profile-head {
+.form-actions {
   display: flex;
   justify-content: space-between;
   gap: 14px;
@@ -645,6 +957,24 @@ void accountStore.initialize()
   gap: 4px;
 }
 
+.environment-toolbar,
+.environment-name-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.environment-toolbar :deep(.el-select),
+.environment-name-row :deep(.el-input) {
+  flex: 1;
+}
+
+.environment-actions {
+  display: flex;
+  gap: 12px;
+}
+
 .form-actions {
   flex-wrap: wrap;
 }
@@ -659,29 +989,29 @@ void accountStore.initialize()
   gap: 18px;
 }
 
-.profile-meta strong {
-  font-size: 20px;
+.profile-descriptions {
+  margin-top: 4px;
 }
 
-.tag-stack {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+:deep(.profile-descriptions .el-descriptions__label) {
+  width: 128px;
+  color: var(--studio-text-secondary);
+  background: color-mix(in srgb, var(--studio-card-background) 88%, #000 12%);
 }
 
-.profile-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.profile-item {
-  padding: 16px;
-}
-
-.profile-item strong {
-  display: block;
-  margin-top: 10px;
-  line-height: 1.6;
+:deep(.profile-descriptions .el-descriptions__content) {
+  color: var(--studio-text-primary);
+  background: transparent;
   word-break: break-all;
+}
+
+:deep(.profile-descriptions .el-descriptions__table) {
+  border-color: var(--studio-border);
+}
+
+:deep(.profile-descriptions .el-descriptions__cell) {
+  padding-top: 12px;
+  padding-bottom: 12px;
 }
 
 @media (max-width: 1260px) {
@@ -695,13 +1025,17 @@ void accountStore.initialize()
     padding: 16px;
   }
 
-  .profile-grid {
-    grid-template-columns: 1fr;
+  :deep(.profile-descriptions .el-descriptions__label) {
+    width: 110px;
   }
 
   .section-header,
   .form-actions,
-  .profile-head {
+  .environment-name-row {
+    flex-direction: column;
+  }
+
+  .environment-actions {
     flex-direction: column;
   }
 }

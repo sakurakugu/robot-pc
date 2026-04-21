@@ -49,9 +49,21 @@ export interface RegisterConfig {
   registerApprovalRequired: boolean
 }
 
+export interface SubmitFeedbackDTO {
+  content: string
+}
+
+export interface CloudEnvironment {
+  id: string
+  name: string
+  baseUrl: string
+}
+
 export interface StudioUiConfig {
   serverUrl: string
   cloudBaseUrl: string
+  cloudEnvironments: CloudEnvironment[]
+  activeCloudEnvironmentId: string
 }
 
 export interface ApiResp<T> {

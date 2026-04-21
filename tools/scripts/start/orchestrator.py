@@ -33,7 +33,7 @@ FRONTEND_PORT = 5175
 BACKEND_PORT = 9010
 FRONTEND_URL = f"http://127.0.0.1:{FRONTEND_PORT}/"
 BACKEND_HEALTH_URL = f"http://127.0.0.1:{BACKEND_PORT}/api/v1/health"
-SCRIPT_PATH = ROOT / "tools" / "1.启动工作站.py"
+SCRIPT_PATH = ROOT / "tools" / "1.启动电脑端.py"
 
 
 def _清理陈旧记录() -> None:

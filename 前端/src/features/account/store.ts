@@ -12,18 +12,20 @@ import {
   revokeSession,
   updateStudioUiConfig,
 } from './api'
-import type { AuthUser, LoginSession, RegisterResult, StudioUiConfig } from './types'
+import type { AuthUser, CloudEnvironment, LoginSession, RegisterResult, StudioUiConfig } from './types'
 
 type ConnectionState = 'idle' | 'checking' | 'connected' | 'error'
 
-const cloudBaseUrl = ref(localStorage.getItem(CLOUD_BASE_URL_CACHE_KEY) || '')
+const cloudEnvironments = ref<CloudEnvironment[]>([])
+const activeCloudEnvironmentId = ref('')
+const cloudBaseUrl = computed(() => 获取当前云端环境(cloudEnvironments.value, activeCloudEnvironmentId.value)?.baseUrl || '')
 const token = ref(localStorage.getItem(CLOUD_TOKEN_KEY) || '')
 const user = ref<AuthUser | null>(解析用户缓存())
 const sessions = ref<LoginSession[]>([])
 const registerEnabled = ref(true)
 const registerApprovalRequired = ref(false)
-const connectionState = ref<ConnectionState>(cloudBaseUrl.value ? 'checking' : 'idle')
-const connectionMessage = ref(cloudBaseUrl.value ? '正在检查云端连接' : '尚未配置云端地址')
+const connectionState = ref<ConnectionState>(读取已缓存云端地址() ? 'checking' : 'idle')
+const connectionMessage = ref(读取已缓存云端地址() ? '正在检查云端连接' : '尚未配置云端地址')
 const initialized = ref(false)
 
 let 初始化任务: Promise<void> | null = null
@@ -32,7 +34,6 @@ const isAuthenticated = computed(() => Boolean(token.value && user.value))
 const currentSessionCount = computed(() => sessions.value.length)
 
 function 持久化云端地址(value: string): void {
-  cloudBaseUrl.value = value
   if (value) {
     localStorage.setItem(CLOUD_BASE_URL_CACHE_KEY, value)
   } else {
@@ -62,7 +63,9 @@ function 清理会话(): void {
 }
 
 function 同步UI配置(config: StudioUiConfig): void {
-  持久化云端地址(config.cloudBaseUrl || '')
+  cloudEnvironments.value = config.cloudEnvironments || []
+  activeCloudEnvironmentId.value = config.activeCloudEnvironmentId || config.cloudEnvironments?.[0]?.id || ''
+  持久化云端地址(config.cloudBaseUrl || 获取当前云端环境(cloudEnvironments.value, activeCloudEnvironmentId.value)?.baseUrl || '')
 }
 
 async function 加载本地云端配置(): Promise<StudioUiConfig> {
@@ -139,7 +142,29 @@ async function 初始化(): Promise<void> {
 }
 
 async function 保存云端地址(value: string): Promise<StudioUiConfig> {
-  const response = await updateStudioUiConfig({ cloudBaseUrl: value })
+  const currentEnvironment = 获取当前云端环境(cloudEnvironments.value, activeCloudEnvironmentId.value)
+  const nextEnvironments = currentEnvironment
+    ? cloudEnvironments.value.map((item) => (item.id === currentEnvironment.id ? { ...item, baseUrl: value.trim().replace(/\/+$/, '') } : item))
+    : cloudEnvironments.value
+  const response = await updateStudioUiConfig({
+    cloudBaseUrl: value,
+    cloudEnvironments: nextEnvironments,
+    activeCloudEnvironmentId: activeCloudEnvironmentId.value,
+  })
+  const previousBaseUrl = cloudBaseUrl.value
+  同步UI配置(response.data)
+  if (previousBaseUrl !== response.data.cloudBaseUrl) {
+    清理会话()
+  }
+  await 检查云端连接(false)
+  return response.data
+}
+
+async function 保存云端环境配置(payload: {
+  cloudEnvironments: CloudEnvironment[]
+  activeCloudEnvironmentId: string
+}): Promise<StudioUiConfig> {
+  const response = await updateStudioUiConfig(payload)
   const previousBaseUrl = cloudBaseUrl.value
   同步UI配置(response.data)
   if (previousBaseUrl !== response.data.cloudBaseUrl) {
@@ -221,7 +246,10 @@ function 读取连接状态文本(state: ConnectionState): string {
 
 export function useCloudAccountStore() {
   return {
+    cloudEnvironments,
+    activeCloudEnvironmentId,
     cloudBaseUrl,
+    activeCloudEnvironment: computed(() => 获取当前云端环境(cloudEnvironments.value, activeCloudEnvironmentId.value)),
     token,
     user,
     sessions,
@@ -236,6 +264,7 @@ export function useCloudAccountStore() {
     initialize: 初始化,
     loadStudioConfig: 加载本地云端配置,
     saveCloudBaseUrl: 保存云端地址,
+    saveCloudEnvironmentConfig: 保存云端环境配置,
     checkCloudConnection: 检查云端连接,
     restoreProfileIfNeeded: 恢复当前账号,
     refreshProfile: 刷新账号信息,
@@ -258,4 +287,17 @@ function 解析用户缓存(): AuthUser | null {
   } catch {
     return null
   }
+}
+
+function 获取当前云端环境(
+  environments: CloudEnvironment[],
+  activeId: string,
+): CloudEnvironment | null {
+  return environments.find((item) => item.id === activeId)
+    || environments[0]
+    || null
+}
+
+function 读取已缓存云端地址(): string {
+  return (localStorage.getItem(CLOUD_BASE_URL_CACHE_KEY) || '').trim()
 }
