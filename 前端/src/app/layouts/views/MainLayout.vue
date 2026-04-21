@@ -12,6 +12,16 @@
         <span class="page-title">{{ currentTitle }}</span>
       </div>
       <div class="header-actions">
+        <el-button
+          class="account-button"
+          @click="router.push('/account')"
+        >
+          <span
+            class="account-indicator"
+            :class="`is-${accountIndicatorTone}`"
+          />
+          <span class="account-button-text">{{ accountButtonText }}</span>
+        </el-button>
         <ThemeToggle />
       </div>
     </el-header>
@@ -75,11 +85,12 @@
 </template>
 
 <script setup lang="ts">
+import { useCloudAccountStore } from '@/features/account/store'
 import ThemeToggle from '@/app/components/ThemeToggle.vue'
-import { Connection, Expand, Fold, HomeFilled, LocationInformation, VideoPlay } from '@element-plus/icons-vue'
+import { Connection, Expand, Fold, HomeFilled, LocationInformation, UserFilled, VideoPlay } from '@element-plus/icons-vue'
 import { Bot } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 type AsideMode = 'expanded' | 'compact' | 'hidden'
 
@@ -90,6 +101,8 @@ type MenuItem = {
 }
 
 const route = useRoute()
+const router = useRouter()
+const accountStore = useCloudAccountStore()
 
 const asideMode = ref<AsideMode>('expanded')
 const autoCompact = ref(false)
@@ -101,6 +114,7 @@ const expandRatio = 0.18
 
 const menuItems: MenuItem[] = [
   { key: '/', label: '首页', icon: HomeFilled },
+  { key: '/account', label: '个人中心', icon: UserFilled },
   { key: '/robots', label: '机器人管理', icon: Connection },
   { key: '/mapping', label: '地图工作台', icon: LocationInformation },
   { key: '/choreo', label: '编舞系统', icon: VideoPlay },
@@ -130,6 +144,28 @@ const triggerText = computed(() => {
 })
 
 const currentTitle = computed(() => String(route.meta.title || '工作站'))
+const accountButtonText = computed(() => {
+  if (accountStore.isAuthenticated.value && accountStore.user.value) {
+    return `云端：${accountStore.user.value.username}`
+  }
+  if (accountStore.cloudBaseUrl.value) {
+    return `云端：${accountStore.connectionStatusText.value}`
+  }
+  return '云端未配置'
+})
+const accountIndicatorTone = computed(() => {
+  if (accountStore.isAuthenticated.value) {
+    return 'success'
+  }
+  switch (accountStore.connectionState.value) {
+    case 'connected':
+      return 'warning'
+    case 'error':
+      return 'danger'
+    default:
+      return 'info'
+  }
+})
 
 const activeMenu = computed(() => {
   const path = route.path
@@ -238,6 +274,51 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   gap: 14px;
   min-width: 0;
+}
+
+.account-button {
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid var(--studio-header-control-border);
+  background: var(--studio-header-control-background);
+  color: var(--studio-text-primary);
+  box-shadow: var(--studio-header-control-shadow);
+}
+
+.account-button:hover {
+  border-color: var(--studio-header-control-hover-border);
+  background: var(--studio-header-control-hover-background);
+}
+
+.account-button-text {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-right: 8px;
+  background: rgba(148, 163, 184, 0.9);
+}
+
+.account-indicator.is-success {
+  background: #22c55e;
+}
+
+.account-indicator.is-warning {
+  background: #f59e0b;
+}
+
+.account-indicator.is-danger {
+  background: #ef4444;
+}
+
+.account-indicator.is-info {
+  background: rgba(148, 163, 184, 0.9);
 }
 
 .page-title {

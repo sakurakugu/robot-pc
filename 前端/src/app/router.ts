@@ -1,5 +1,6 @@
 import type { RouteRecordRaw } from 'vue-router'
 import { createRouter, createWebHistory } from 'vue-router'
+import { accountRoutes } from '@/features/account/router'
 import { choreoRoutes } from '@/features/choreo/router'
 import { mappingRoutes } from '@/features/mapping/router'
 import { robotRoutes } from '@/features/robot/router'
@@ -18,6 +19,7 @@ const routes: RouteRecordRaw[] = [
           description: '查看电脑端工作站总览，并从这里进入机器狗管理、地图工作台和编舞系统。',
         },
       },
+      ...accountRoutes,
       ...robotRoutes,
       ...mappingRoutes,
     ],

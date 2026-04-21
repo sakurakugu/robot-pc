@@ -26,6 +26,21 @@ export interface PlanarPose {
   confidence: number
 }
 
+export interface LidarScan {
+  frameId: string
+  angleMin: number
+  angleMax: number
+  angleIncrement: number
+  rangeMin: number
+  rangeMax: number
+  scanTime: number | null
+  timeIncrement: number | null
+  ranges: Array<number | null>
+  pointCount: number
+  capturedAt: number
+  pose: PlanarPose | null
+}
+
 export interface MappingCommandRecord {
   command: MappingCommand
   mapId: string | null
@@ -53,6 +68,7 @@ export interface MappingRuntime {
   localizationActive: boolean
   currentPose: PlanarPose | null
   goalPose: PlanarPose | null
+  lidarScan: LidarScan | null
   lastCommand: MappingCommand | null
   lastCommandAt: string | null
   commandHistory: MappingCommandRecord[]

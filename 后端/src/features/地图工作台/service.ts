@@ -8,7 +8,7 @@ import type { ServerMessage } from '../../shared/types'
 import { Http错误工厂 } from '../../shared/http/errors'
 import type { RobotRepository } from '../机器人管理/repository'
 import type { RobotRecord } from '../机器人管理/types'
-import type { 地图元数据, 地图命令请求, 地图命令类型, 地图命令记录, 地图运行状态, 平面位姿, 选中机器人运行信息 } from './types'
+import type { 地图元数据, 地图命令请求, 地图命令类型, 地图命令记录, 地图运行状态, 平面位姿, 激光扫描数据, 选中机器人运行信息 } from './types'
 
 interface 地图工作台服务选项 {
   地图目录: string
@@ -28,6 +28,7 @@ interface 机器人运行态缓存 {
   navigationState: Record<string, unknown> | null
   mapState: Record<string, unknown> | null
   lastMapResponse: Record<string, unknown> | null
+  lidarScan: 激光扫描数据 | null
   lastUpdatedAt: string | null
 }
 
@@ -61,6 +62,7 @@ export class 地图工作台服务 {
       localizationActive: false,
       currentPose: null,
       goalPose: null,
+      lidarScan: null,
       lastCommand: null,
       lastCommandAt: null,
       commandHistory: [],
@@ -233,6 +235,23 @@ export class 地图工作台服务 {
       }
     }
 
+    if (message.type === 'lidar_scan' && 是对象(message.data)) {
+      const lidarScan = 解析激光扫描(message.data)
+      缓存.lidarScan = lidarScan
+      缓存.lastUpdatedAt = new Date().toISOString()
+      if (lidarScan) {
+        this.广播?.({
+          type: 'mapping.lidar_scan.updated',
+          robotId,
+          timestamp: Date.now(),
+          data: {
+            robotId,
+            scan: 复制激光扫描(lidarScan),
+          },
+        })
+      }
+    }
+
     this.机器人状态缓存.set(robotId, 缓存)
   }
 
@@ -314,6 +333,7 @@ export class 地图工作台服务 {
       commandHistory: [...this.运行状态.commandHistory],
       currentPose: this.运行状态.currentPose ? { ...this.运行状态.currentPose } : null,
       goalPose: this.运行状态.goalPose ? { ...this.运行状态.goalPose } : null,
+      lidarScan: this.运行状态.lidarScan ? 复制激光扫描(this.运行状态.lidarScan) : null,
       telemetrySource: 'stub',
       commandSource: 'stub',
       selectedRobot: null,
@@ -346,6 +366,7 @@ export class 地图工作台服务 {
       return {
         telemetrySource: 'stub',
         commandSource: wsConnected ? 'robot_ws' : 'pending_robot',
+        lidarScan: null,
         selectedRobot: 机器人信息,
       }
     }
@@ -375,6 +396,7 @@ export class 地图工作台服务 {
         localizationActive: 是否为定位态(localizationState),
         currentPose: 当前位姿,
         goalPose: 目标位姿,
+        lidarScan: null,
         telemetrySource: 'robot',
         commandSource: wsConnected ? 'robot_ws' : 'pending_robot',
         selectedRobot: 机器人信息,
@@ -390,6 +412,7 @@ export class 地图工作台服务 {
       return {
         telemetrySource: 'stub',
         commandSource: wsConnected ? 'robot_ws' : 'pending_robot',
+        lidarScan: null,
         selectedRobot: 机器人信息,
       }
     }
@@ -419,8 +442,9 @@ export class 地图工作台服务 {
       activeMapId: 当前地图?.id ?? null,
       mappingActive: 是否为建图态(mapState),
       localizationActive: 是否为定位态(localizationState),
-      currentPose: 解析平面位姿(读取对象(缓存.navigationState)?.current_pose, confidence),
+      currentPose: 解析平面位姿(读取对象(缓存.navigationState)?.current_pose, confidence) ?? (缓存.lidarScan?.pose ? { ...缓存.lidarScan.pose } : null),
       goalPose: 解析平面位姿(读取对象(缓存.navigationState)?.current_goal, confidence),
+      lidarScan: 缓存.lidarScan ? 复制激光扫描(缓存.lidarScan) : null,
       telemetrySource: 'robot',
       commandSource: 'robot_ws',
       selectedRobot: 机器人信息,
@@ -525,6 +549,7 @@ function 创建空机器人运行态缓存(): 机器人运行态缓存 {
     navigationState: null,
     mapState: null,
     lastMapResponse: null,
+    lidarScan: null,
     lastUpdatedAt: null,
   }
 }
@@ -543,7 +568,54 @@ function 可用类型列表(缓存: 机器人运行态缓存): string[] {
   if (缓存.lastMapResponse) {
     types.push('map_response')
   }
+  if (缓存.lidarScan) {
+    types.push('lidar_scan')
+  }
   return types
+}
+
+function 复制激光扫描(scan: 激光扫描数据): 激光扫描数据 {
+  return {
+    ...scan,
+    ranges: [...scan.ranges],
+    pose: scan.pose ? { ...scan.pose } : null,
+  }
+}
+
+function 解析激光扫描(value: Record<string, unknown>): 激光扫描数据 | null {
+  if (读取布尔值(value, 'available') !== true) {
+    return null
+  }
+
+  const angleMin = 读取数值(value, 'angle_min')
+  const angleMax = 读取数值(value, 'angle_max')
+  const angleIncrement = 读取数值(value, 'angle_increment')
+  const rangeMin = 读取数值(value, 'range_min')
+  const rangeMax = 读取数值(value, 'range_max')
+  const capturedAt = 读取数值(value, 'captured_at')
+  if (angleMin === null || angleMax === null || angleIncrement === null || rangeMin === null || rangeMax === null || capturedAt === null) {
+    return null
+  }
+
+  const ranges = 读取可空数值数组(value.ranges)
+  const poseObject = 读取对象(value.pose)
+  const pose = poseObject ? 解析平面位姿(poseObject, 读取数值(poseObject, 'confidence') ?? 1) : null
+  const pointCount = 读取数值(value, 'point_count')
+
+  return {
+    frameId: 读取字符串(value, 'frame_id') ?? 'laser',
+    angleMin,
+    angleMax,
+    angleIncrement,
+    rangeMin,
+    rangeMax,
+    scanTime: 读取数值(value, 'scan_time'),
+    timeIncrement: 读取数值(value, 'time_increment'),
+    ranges,
+    pointCount: pointCount ?? ranges.filter((item) => item !== null).length,
+    capturedAt: Math.trunc(capturedAt),
+    pose,
+  }
 }
 
 async function 打开系统目录(targetPath: string): Promise<void> {
@@ -735,6 +807,20 @@ function 读取字符串数组(value: unknown): string[] {
     return []
   }
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+}
+
+function 读取可空数值数组(value: unknown): Array<number | null> {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.map((item) => {
+    if (item === null) {
+      return null
+    }
+    const numberValue = typeof item === 'number' ? item : Number(item)
+    return Number.isFinite(numberValue) ? numberValue : null
+  })
 }
 
 async function 递归收集地图Yaml(rootDir: string): Promise<string[]> {

@@ -30,6 +30,21 @@ export interface 平面位姿 {
   confidence: number
 }
 
+export interface 激光扫描数据 {
+  frameId: string
+  angleMin: number
+  angleMax: number
+  angleIncrement: number
+  rangeMin: number
+  rangeMax: number
+  scanTime: number | null
+  timeIncrement: number | null
+  ranges: Array<number | null>
+  pointCount: number
+  capturedAt: number
+  pose: 平面位姿 | null
+}
+
 export interface 地图命令记录 {
   command: 地图命令类型
   mapId: string | null
@@ -57,6 +72,7 @@ export interface 地图运行状态 {
   localizationActive: boolean
   currentPose: 平面位姿 | null
   goalPose: 平面位姿 | null
+  lidarScan: 激光扫描数据 | null
   lastCommand: 地图命令类型 | null
   lastCommandAt: string | null
   commandHistory: 地图命令记录[]

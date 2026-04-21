@@ -132,11 +132,12 @@
         <div class="panel-header">
           <div>
             <h2>地图画布</h2>
-            <p>显示地图底图，并叠加机器人位姿与目标位姿</p>
+            <p>显示地图底图，并叠加机器人位姿、目标位姿与实时激光扫描</p>
           </div>
           <div class="canvas-legend">
             <span><i class="legend-dot robot" />机器人</span>
             <span><i class="legend-dot goal" />目标点</span>
+            <span><i class="legend-dot lidar" />激光扫描</span>
           </div>
         </div>
 
@@ -179,6 +180,22 @@
                 @load="handleImageLoad"
                 @error="handleImageError"
               >
+
+              <svg
+                v-if="lidarScanPoints.length > 0"
+                class="scan-overlay"
+                :viewBox="`0 0 ${mapImageSize.width} ${mapImageSize.height}`"
+                preserveAspectRatio="none"
+              >
+                <circle
+                  v-for="point in lidarScanPoints"
+                  :key="point.id"
+                  class="scan-point"
+                  :cx="point.x"
+                  :cy="point.y"
+                  r="1.6"
+                />
+              </svg>
 
               <div
                 v-if="currentPoseStyle"
@@ -326,6 +343,14 @@
               <span>最后时间</span>
               <strong>{{ runtime.lastCommandAt ? formatTime(runtime.lastCommandAt) : '-' }}</strong>
             </div>
+            <div class="kv-item">
+              <span>激光点数</span>
+              <strong>{{ runtime.lidarScan?.pointCount || 0 }}</strong>
+            </div>
+            <div class="kv-item">
+              <span>扫描时间</span>
+              <strong>{{ runtime.lidarScan ? formatTimestamp(runtime.lidarScan.capturedAt) : '-' }}</strong>
+            </div>
           </div>
         </div>
 
@@ -335,7 +360,7 @@
             <p class="pose-title">
               机器人位姿
             </p>
-            <p>{{ formatPose(runtime.currentPose) }}</p>
+            <p>{{ formatPose(currentPose) }}</p>
           </div>
           <div class="pose-card">
             <p class="pose-title">
@@ -380,8 +405,9 @@ import { Map } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/share/components/PageHeader.vue'
+import { useWebSocket } from '@/share/websocket/useWebSocket'
 import { mappingApi } from '../api'
-import type { MappingCommand, MappingRuntime, PlanarPose, StudioMap } from '../types'
+import type { LidarScan, MappingCommand, MappingRuntime, PlanarPose, StudioMap } from '../types'
 import { getRobotList } from '@/features/robot/api'
 import type { Robot } from '@/features/robot/types'
 
@@ -401,6 +427,7 @@ const runtime = ref<MappingRuntime>({
   localizationActive: false,
   currentPose: null,
   goalPose: null,
+  lidarScan: null,
   lastCommand: null,
   lastCommandAt: null,
   commandHistory: [],
@@ -438,11 +465,15 @@ const commandSourceLabelMap: Record<MappingRuntime['commandSource'], string> = {
 
 const selectedMap = computed(() => maps.value.find((item) => item.id === selectedMapId.value) || null)
 const activeMap = computed(() => maps.value.find((item) => item.id === runtime.value.activeMapId) || null)
+const currentPose = computed(() => runtime.value.lidarScan?.pose ?? runtime.value.currentPose)
 
-const currentPoseStyle = computed(() => buildPoseStyle(runtime.value.currentPose, true))
+const currentPoseStyle = computed(() => buildPoseStyle(currentPose.value, true))
 const goalPoseStyle = computed(() => buildPoseStyle(runtime.value.goalPose, false))
+const lidarScanPoints = computed(() => buildLidarScanPoints(runtime.value.lidarScan, currentPose.value))
 
 let pollTimer: number | null = null
+const { onMessage, connect: wsConnect, disconnect: wsDisconnect } = useWebSocket()
+let removeRealtimeHandler: (() => void) | null = null
 
 async function refreshAll(): Promise<void> {
   loading.value = true
@@ -553,7 +584,97 @@ function formatTime(value: string): string {
   return new Date(value).toLocaleString('zh-CN')
 }
 
+function formatTimestamp(value: number): string {
+  return new Date(value).toLocaleString('zh-CN')
+}
+
+function buildLidarScanPoints(scan: LidarScan | null, pose: PlanarPose | null): Array<{ id: string; x: number; y: number }> {
+  if (!scan || !pose || !selectedMap.value || mapImageSize.value.width <= 0 || mapImageSize.value.height <= 0) {
+    return []
+  }
+
+  const cosYaw = Math.cos(pose.yaw)
+  const sinYaw = Math.sin(pose.yaw)
+  const points: Array<{ id: string; x: number; y: number }> = []
+
+  for (let index = 0; index < scan.ranges.length; index += 1) {
+    const distance = scan.ranges[index]
+    if (distance === null || distance < scan.rangeMin || distance > scan.rangeMax) {
+      continue
+    }
+
+    const angle = scan.angleMin + (index * scan.angleIncrement)
+    const localX = distance * Math.cos(angle)
+    const localY = distance * Math.sin(angle)
+    const worldX = pose.position[0] + (localX * cosYaw) - (localY * sinYaw)
+    const worldY = pose.position[1] + (localX * sinYaw) + (localY * cosYaw)
+    const xPixels = (worldX - selectedMap.value.origin[0]) / selectedMap.value.resolution
+    const yPixels = mapImageSize.value.height - ((worldY - selectedMap.value.origin[1]) / selectedMap.value.resolution)
+
+    if (
+      !Number.isFinite(xPixels)
+      || !Number.isFinite(yPixels)
+      || xPixels < 0
+      || yPixels < 0
+      || xPixels > mapImageSize.value.width
+      || yPixels > mapImageSize.value.height
+    ) {
+      continue
+    }
+
+    points.push({
+      id: `${scan.capturedAt}-${index}`,
+      x: xPixels,
+      y: yPixels,
+    })
+  }
+
+  return points
+}
+
+function setupRealtimeListener(): void {
+  removeRealtimeHandler = onMessage((message: unknown) => {
+    if (!message || typeof message !== 'object') {
+      return
+    }
+
+    const payload = message as {
+      type?: string
+      data?: {
+        robotId?: string
+        scan?: LidarScan | null
+      }
+    }
+
+    if (payload.type !== 'mapping.lidar_scan.updated') {
+      return
+    }
+
+    const robotId = payload.data?.robotId
+    if (!robotId || robotId !== selectedRobotId.value) {
+      return
+    }
+
+    const scan = payload.data?.scan ?? null
+    runtime.value.lidarScan = scan
+    if (scan?.pose) {
+      runtime.value.currentPose = scan.pose
+    }
+  })
+
+  wsConnect().catch((error) => {
+    console.warn('地图页 WS 连接失败:', error)
+  })
+}
+
+function cleanupRealtimeListener(): void {
+  removeRealtimeHandler?.()
+  removeRealtimeHandler = null
+  wsDisconnect()
+}
+
 onMounted(async () => {
+  setupRealtimeListener()
   await refreshAll()
   pollTimer = window.setInterval(() => {
     void refreshAll()
@@ -573,6 +694,7 @@ onBeforeUnmount(() => {
   if (pollTimer !== null) {
     window.clearInterval(pollTimer)
   }
+  cleanupRealtimeListener()
 })
 </script>
 
@@ -783,6 +905,10 @@ onBeforeUnmount(() => {
   background: #f97316;
 }
 
+.legend-dot.lidar {
+  background: #22c55e;
+}
+
 .map-stage-meta {
   display: flex;
   flex-direction: column;
@@ -815,6 +941,18 @@ onBeforeUnmount(() => {
   height: auto;
   border-radius: 18px;
   box-shadow: 0 18px 42px rgba(2, 6, 23, 0.45);
+}
+
+.scan-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.scan-point {
+  fill: rgba(34, 197, 94, 0.9);
 }
 
 .pose-marker {
