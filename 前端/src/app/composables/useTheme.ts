@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 
 export type AppTheme = 'light' | 'dark'
 
-const STORAGE_KEY = 'robot-studio-theme'
+const STORAGE_KEY = 'robot-pc-theme'
 const theme = ref<AppTheme>('light')
 const followSystem = ref(false)
 let initialized = false

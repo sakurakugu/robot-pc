@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Robot Studio 依赖检查脚本
+# Robot PC 依赖检查脚本
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -36,7 +36,7 @@ check_node_modules() {
 }
 
 echo "========================================"
-echo "  Robot Studio 依赖检查"
+echo "  Robot PC 依赖检查"
 echo "========================================"
 
 check_command node "Node.js"

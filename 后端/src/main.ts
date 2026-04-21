@@ -10,13 +10,13 @@ async function main(): Promise<void> {
   studio.wsHost.初始化(httpServer)
 
   httpServer.listen(配置.port, () => {
-    logger.info('Robot Studio 本地后端已启动', {
+    logger.info('Robot PC 本地后端已启动', {
       port: 配置.port,
     })
   })
 }
 
 void main().catch((error) => {
-  logger.error('Robot Studio 启动失败', error)
+  logger.error('Robot PC 启动失败', error)
   process.exit(1)
 })

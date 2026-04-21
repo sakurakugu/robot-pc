@@ -2,7 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 const studioHome = process.env.ROBOT_STUDIO_HOME
-  || path.join(os.homedir(), '.robot-studio')
+  || path.join(os.homedir(), '.robot-pc')
 
 const 配置 = {
   port: Number(process.env.PORT || 9010),

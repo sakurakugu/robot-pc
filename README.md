@@ -1,4 +1,4 @@
-# robot-studio
+# robot-pc
 
 机器狗电脑端工作站，负责以下本地优先能力：
 
@@ -11,7 +11,7 @@
 ## 当前目录
 
 ```text
-robot-studio/
+robot-pc/
 ├── 前端/          # Vue 3 + TypeScript + Vite
 ├── 后端/          # Node.js + TypeScript，本地 API / WebSocket
 └── docs/          # 设计与使用文档
@@ -20,7 +20,7 @@ robot-studio/
 ## 定位
 
 - `robot-cloud` 负责云端管理、账号权限、远程接入与资产管理
-- `robot-studio` 负责电脑端重交互、本地调试与专业工作流
+- `robot-pc` 负责电脑端重交互、本地调试与专业工作流
 
 ## 启动方式
 

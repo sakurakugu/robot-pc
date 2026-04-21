@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Robot Studio 本地工作站启动器。
+"""Robot PC 本地工作站启动器。
 
 start:      启动前端和后端开发服务
 stop:       停止前端和后端开发服务
@@ -19,7 +19,7 @@ from scripts.start.orchestrator import check_all, restart_all, start_all, status
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Robot Studio 本地工作站启动器")
+    parser = argparse.ArgumentParser(description="Robot PC 本地工作站启动器")
     parser.add_argument(
         "command",
         nargs="?",

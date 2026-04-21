@@ -341,6 +341,7 @@ def _判断是否为_studio_进程(pid: int, command_line: str) -> bool:
     markers = [
         str(ROOT / "前端").replace("/", "\\").lower(),
         str(ROOT / "后端").replace("/", "\\").lower(),
+        "robot-pc",
         "robot-studio",
         "vite",
         "ts-node-dev",

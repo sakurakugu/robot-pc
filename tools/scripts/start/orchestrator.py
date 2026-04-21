@@ -115,7 +115,7 @@ def _读取进程状态(name: str) -> tuple[str, int]:
 
 def _打印启动摘要(backend_log: Path, frontend_log: Path) -> None:
     print("")
-    print("Robot Studio 已启动:")
+    print("Robot PC 已启动:")
     print(f"  前端: {FRONTEND_URL}")
     print(f"  后端健康检查: {BACKEND_HEALTH_URL}")
     print(f"  前端日志: {frontend_log}")
@@ -133,7 +133,7 @@ def _持续监控() -> None:
             当前时间 = time.monotonic()
             if 当前时间 - 上次中断时间 <= 2:
                 print("")
-                print("检测到 Ctrl+C，正在停止 Robot Studio")
+                print("检测到 Ctrl+C，正在停止 Robot PC")
                 stop_all()
                 break
             上次中断时间 = 当前时间
@@ -147,7 +147,7 @@ def _持续监控() -> None:
         frontend_alive = 进程存在(frontend_pid)
 
         if not backend_alive and not frontend_alive:
-            print("Robot Studio 进程已全部退出")
+            print("Robot PC 进程已全部退出")
             break
 
         if backend_alive and frontend_alive:
@@ -172,12 +172,12 @@ def start_all() -> None:
     backend_started = False
     frontend_started = False
     try:
-        print(f"启动 Robot Studio 后端... ({BACKEND_HEALTH_URL})")
+        print(f"启动 Robot PC 后端... ({BACKEND_HEALTH_URL})")
         backend_proc, backend_pid = spawn(["npm", "run", "dev"], cwd=BACKEND_DIR, log_path=backend_log)
         write_pid("studio-backend", backend_pid)
         backend_started = True
 
-        print(f"启动 Robot Studio 前端... ({FRONTEND_URL})")
+        print(f"启动 Robot PC 前端... ({FRONTEND_URL})")
         frontend_proc, frontend_pid = spawn(
             ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", str(FRONTEND_PORT)],
             cwd=FRONTEND_DIR,
@@ -204,9 +204,9 @@ def stop_all() -> None:
     stopped_frontend = kill_pid_file("studio-frontend")
     _清理陈旧记录()
     if stopped_backend or stopped_frontend:
-        print("Robot Studio 已停止")
+        print("Robot PC 已停止")
     else:
-        print("没有运行中的 Robot Studio 进程")
+        print("没有运行中的 Robot PC 进程")
 
 
 def restart_all() -> None:
@@ -231,13 +231,13 @@ def check_all() -> None:
         print(f"执行{scope}{action}...")
         run(command, cwd=cwd)
 
-    print("Robot Studio 检查已全部通过")
+    print("Robot PC 检查已全部通过")
 
 
 def status_all() -> None:
     _清理陈旧记录()
     print("========================================")
-    print("  Robot Studio - 状态")
+    print("  Robot PC - 状态")
     print("========================================")
     for label, name in (("后端", "studio-backend"), ("前端", "studio-frontend")):
         state, pid = _读取进程状态(name)
