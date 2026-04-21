@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import cors from 'cors'
 import express from 'express'
 import { ChoreoController, ChoreoService, createChoreoRoutes, 创建编舞执行消息网关 } from './features/编舞系统'
@@ -16,6 +18,36 @@ import { 发送Http错误 } from './shared/http/controller'
 export interface StudioAppContext {
   app: express.Application
   wsHost: StudioWebSocketHost
+}
+
+function 获取前端静态资源目录(): { 目录: string; 入口文件: string } | null {
+  const 候选目录 = [
+    process.env.ROBOT_STUDIO_WEB_DIST,
+    path.resolve(__dirname, '../../前端/dist'),
+  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+
+  for (const 目录 of 候选目录) {
+    const 绝对目录 = path.resolve(目录)
+    const 入口文件 = path.join(绝对目录, 'index.html')
+    if (!fs.existsSync(入口文件)) {
+      continue
+    }
+    return { 目录: 绝对目录, 入口文件 }
+  }
+
+  return null
+}
+
+function 挂载前端静态资源(app: express.Application): void {
+  const 静态资源 = 获取前端静态资源目录()
+  if (!静态资源) {
+    return
+  }
+
+  app.use(express.static(静态资源.目录))
+  app.get(/^(?!\/api\/v1(?:\/|$)).*/, (_req, res) => {
+    res.sendFile(静态资源.入口文件)
+  })
 }
 
 export async function createApp(): Promise<StudioAppContext> {
@@ -70,6 +102,8 @@ export async function createApp(): Promise<StudioAppContext> {
       },
     })
   })
+
+  挂载前端静态资源(app)
 
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     logger.error('未处理的错误', error)

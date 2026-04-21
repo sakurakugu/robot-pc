@@ -5,6 +5,7 @@ node_modules/
 
 # 构建产物
 dist/
+dist-electron/
 前端/dist/
 后端/dist/
 .vite/

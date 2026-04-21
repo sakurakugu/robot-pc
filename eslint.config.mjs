@@ -3,9 +3,12 @@ import tseslint from '@typescript-eslint/eslint-plugin'
 import tsparser from '@typescript-eslint/parser'
 
 export default [
+  {
+    ignores: ['dist-electron/**', 'node_modules/**'],
+  },
   js.configs.recommended,
   {
-    files: ['src/**/*.ts'],
+    files: ['electron/**/*.ts'],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
@@ -16,16 +19,11 @@ export default [
         console: 'readonly',
         process: 'readonly',
         __dirname: 'readonly',
-        require: 'readonly',
-        module: 'readonly',
         Buffer: 'readonly',
-        fetch: 'readonly',
-        AbortController: 'readonly',
+        require: 'readonly',
         URL: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
       },
     },
     plugins: {

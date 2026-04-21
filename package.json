@@ -1,0 +1,84 @@
+{
+  "name": "robot-pc-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Robot PC Electron 桌面工作站",
+  "author": "elric",
+  "main": "dist-electron/main.js",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "lint": "eslint electron --ext .ts",
+    "typecheck": "tsc --noEmit -p tsconfig.electron.json",
+    "build": "tsc -p tsconfig.electron.json",
+    "dist:win": "electron-builder --win nsis --publish never"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^24.9.0",
+    "@typescript-eslint/eslint-plugin": "^8.53.1",
+    "@typescript-eslint/parser": "^8.53.1",
+    "electron": "^39.1.0",
+    "electron-builder": "^26.0.12",
+    "eslint": "^9.39.2",
+    "typescript": "^5.9.3"
+  },
+  "build": {
+    "appId": "com.sparkrobot.pc",
+    "productName": "Robot PC",
+    "publish": null,
+    "directories": {
+      "output": ".cache/electron/dist"
+    },
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".cache/electron/runtime/backend/dist",
+        "to": "backend/dist"
+      },
+      {
+        "from": ".cache/electron/runtime/backend/package.json",
+        "to": "backend/package.json"
+      },
+      {
+        "from": ".cache/electron/runtime/backend/package-lock.json",
+        "to": "backend/package-lock.json"
+      },
+      {
+        "from": ".cache/electron/runtime/backend/node_modules",
+        "to": "backend/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": ".cache/electron/runtime/frontend/dist",
+        "to": "frontend/dist"
+      }
+    ],
+    "asar": true,
+    "artifactName": "robot-pc-setup-${version}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Robot PC"
+    }
+  }
+}

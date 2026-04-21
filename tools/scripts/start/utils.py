@@ -51,9 +51,17 @@ def 根据平台调整命令(command: list[str]) -> list[str]:
     return command
 
 
-def run(cmd: Iterable[str], cwd: Optional[Path] = None, check: bool = True) -> subprocess.CompletedProcess:
+def run(
+    cmd: Iterable[str],
+    cwd: Optional[Path] = None,
+    check: bool = True,
+    env: Optional[dict[str, str]] = None,
+) -> subprocess.CompletedProcess:
     command = 根据平台调整命令(list(cmd))
-    return subprocess.run(command, cwd=str(cwd) if cwd else None, check=check)
+    process_env = os.environ.copy()
+    if env:
+        process_env.update(env)
+    return subprocess.run(command, cwd=str(cwd) if cwd else None, check=check, env=process_env)
 
 
 def _tee_stream(stream, log_file) -> None:

@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from .packager import build_release_bundle
 from .utils import (
     LOGS_DIR,
     ROOT,
@@ -218,10 +219,13 @@ def restart_all() -> None:
 def check_all() -> None:
     检查运行环境()
     确保目录存在()
+    确保node_modules存在(STUDIO_DIR, 名称="桌面端", 哈希键="desktop_package")
     确保node_modules存在(FRONTEND_DIR, 名称="前端", 哈希键="frontend_package")
     确保node_modules存在(BACKEND_DIR, 名称="后端", 哈希键="backend_package")
 
     checks = [
+        ("桌面端", "lint", STUDIO_DIR, ["npm", "run", "lint"]),
+        ("桌面端", "typecheck", STUDIO_DIR, ["npm", "run", "typecheck"]),
         ("前端", "lint", FRONTEND_DIR, ["npm", "run", "lint"]),
         ("前端", "typecheck", FRONTEND_DIR, ["npm", "run", "typecheck"]),
         ("后端", "lint", BACKEND_DIR, ["npm", "run", "lint"]),
@@ -232,6 +236,10 @@ def check_all() -> None:
         run(command, cwd=cwd)
 
     print("Robot PC 检查已全部通过")
+
+
+def build_all() -> None:
+    build_release_bundle()
 
 
 def status_all() -> None:
