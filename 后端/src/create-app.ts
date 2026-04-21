@@ -61,6 +61,7 @@ export async function createApp(): Promise<StudioAppContext> {
   })
   const mappingService = new 地图工作台服务({
     地图目录: 配置.地图目录,
+    巡逻目录: 配置.巡逻目录,
     机器人仓库: robotRepository,
     发送到机器人: (robotId, message) => wsHost.sendToRobot(robotId, message),
     是否机器人在线: (robotId) => wsHost.isRobotConnected(robotId),

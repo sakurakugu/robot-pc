@@ -8,10 +8,31 @@ import type { ServerMessage } from '../../shared/types'
 import { Http错误工厂 } from '../../shared/http/errors'
 import type { RobotRepository } from '../机器人管理/repository'
 import type { RobotRecord } from '../机器人管理/types'
-import type { 地图元数据, 地图命令请求, 地图命令类型, 地图命令记录, 地图运行状态, 平面位姿, 激光扫描数据, 选中机器人运行信息 } from './types'
+import type {
+  传感器状态信息,
+  地图元数据,
+  巡逻文件详情,
+  巡逻文件元数据,
+  巡逻点详情,
+  地图命令类型,
+  地图命令记录,
+  地图运行状态,
+  导航目标,
+  工作台命令请求,
+  运行时命令通道,
+  运行时命令类型,
+  平面位姿,
+  激光扫描数据,
+  机器人摘要信息,
+  运行时任务信息,
+  运行时地图信息,
+  运行时导航信息,
+  选中机器人运行信息,
+} from './types'
 
 interface 地图工作台服务选项 {
   地图目录: string
+  巡逻目录: string
   机器人仓库: RobotRepository
   发送到机器人: (robotId: string, message: ServerMessage) => boolean
   是否机器人在线: (robotId: string) => boolean
@@ -24,15 +45,19 @@ interface 地图图片响应 {
 }
 
 interface 机器人运行态缓存 {
-  robotSummary: Record<string, unknown> | null
-  navigationState: Record<string, unknown> | null
-  mapState: Record<string, unknown> | null
+  robotSummary: 机器人摘要信息 | null
+  navigationState: 运行时导航信息 | null
+  mapState: 运行时地图信息 | null
+  taskState: 运行时任务信息 | null
+  sensorState: 传感器状态信息 | null
   lastMapResponse: Record<string, unknown> | null
+  lastNavigationResponse: Record<string, unknown> | null
+  lastPatrolResponse: Record<string, unknown> | null
   lidarScan: 激光扫描数据 | null
   lastUpdatedAt: string | null
 }
 
-interface 待完成地图命令 {
+interface 待完成运行时命令 {
   robotId: string
   resolve: (value: Record<string, unknown>) => void
   reject: (reason?: unknown) => void
@@ -41,16 +66,18 @@ interface 待完成地图命令 {
 
 export class 地图工作台服务 {
   private readonly 地图目录: string
+  private readonly 巡逻目录: string
   private readonly 机器人仓库: RobotRepository
   private readonly 发送到机器人: (robotId: string, message: ServerMessage) => boolean
   private readonly 是否机器人在线: (robotId: string) => boolean
   private readonly 广播?: (message: ServerMessage) => void
   private readonly 运行状态: 地图运行状态
   private readonly 机器人状态缓存 = new Map<string, 机器人运行态缓存>()
-  private readonly 待完成命令 = new Map<string, 待完成地图命令>()
+  private readonly 待完成命令 = new Map<string, 待完成运行时命令>()
 
   constructor(选项: 地图工作台服务选项) {
     this.地图目录 = 选项.地图目录
+    this.巡逻目录 = 选项.巡逻目录
     this.机器人仓库 = 选项.机器人仓库
     this.发送到机器人 = 选项.发送到机器人
     this.是否机器人在线 = 选项.是否机器人在线
@@ -71,11 +98,17 @@ export class 地图工作台服务 {
       telemetrySource: 'stub',
       commandSource: 'stub',
       selectedRobot: null,
+      robotSummary: null,
+      navigationState: null,
+      mapState: null,
+      taskState: null,
+      sensorState: null,
     }
   }
 
   async 初始化(): Promise<void> {
     await fs.mkdir(this.地图目录, { recursive: true })
+    await fs.mkdir(this.巡逻目录, { recursive: true })
   }
 
   async 获取地图列表(): Promise<地图元数据[]> {
@@ -125,56 +158,90 @@ export class 地图工作台服务 {
     await 打开系统目录(this.地图目录)
   }
 
-  async 执行命令(请求: 地图命令请求, robotId?: string): Promise<地图运行状态> {
+  async 获取巡逻文件列表(): Promise<巡逻文件元数据[]> {
+    await fs.mkdir(this.巡逻目录, { recursive: true })
+    const 文件列表 = await 递归收集巡逻Json(this.巡逻目录)
+    const 结果 = await Promise.all(文件列表.map(async (filePath) => {
+      const stat = await fs.stat(filePath)
+      return {
+        id: 生成巡逻文件Id(path.relative(this.巡逻目录, filePath)),
+        name: path.basename(filePath, path.extname(filePath)),
+        path: filePath,
+        updatedAt: stat.mtime.toISOString(),
+      } satisfies 巡逻文件元数据
+    }))
+
+    结果.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    return 结果
+  }
+
+  async 获取巡逻文件详情(waypointId: string): Promise<巡逻文件详情> {
+    await fs.mkdir(this.巡逻目录, { recursive: true })
+    const filePath = await this.查找巡逻文件路径(waypointId)
+    return this.读取巡逻文件详情(filePath)
+  }
+
+  async 打开巡逻目录(): Promise<void> {
+    await fs.mkdir(this.巡逻目录, { recursive: true })
+    await 打开系统目录(this.巡逻目录)
+  }
+
+  private async 查找巡逻文件路径(waypointId: string): Promise<string> {
+    const 文件列表 = await 递归收集巡逻Json(this.巡逻目录)
+    const 命中文件 = 文件列表.find((filePath) => {
+      const relativePath = path.relative(this.巡逻目录, filePath)
+      return 生成巡逻文件Id(relativePath) === waypointId
+    })
+
+    if (!命中文件) {
+      throw Http错误工厂.未找到('未找到指定巡逻文件', 'WAYPOINT_FILE_NOT_FOUND')
+    }
+
+    return 命中文件
+  }
+
+  private async 读取巡逻文件详情(filePath: string): Promise<巡逻文件详情> {
+    const [文件状态, 文件内容] = await Promise.all([
+      fs.stat(filePath),
+      fs.readFile(filePath, 'utf8'),
+    ])
+    const relativePath = path.relative(this.巡逻目录, filePath)
+    const 基础信息 = 解析巡逻文件内容(文件内容, path.basename(filePath, path.extname(filePath)))
+
+    return {
+      id: 生成巡逻文件Id(relativePath),
+      name: 基础信息.name,
+      path: filePath,
+      updatedAt: 文件状态.mtime.toISOString(),
+      mapName: 基础信息.mapName,
+      loop: 基础信息.loop,
+      arrivalWaitSec: 基础信息.arrivalWaitSec,
+      waypointCount: 基础信息.waypoints.length,
+      waypoints: 基础信息.waypoints,
+    }
+  }
+
+  async 执行命令(请求: 工作台命令请求, robotId?: string): Promise<地图运行状态> {
     if (robotId) {
       return this.执行机器人命令(robotId, 请求)
     }
 
-    const 命令 = 请求.command
     const 地图列表 = await this.获取地图列表()
-    const 目标地图 = 请求.mapId ? 地图列表.find((item) => item.id === 请求.mapId) : this.获取当前地图(地图列表, this.运行状态.activeMapId)
-
-    switch (命令) {
-      case 'start_mapping':
-        this.运行状态.mode = 'mapping'
-        this.运行状态.mappingActive = true
-        this.运行状态.localizationActive = false
-        this.运行状态.activeMapId = null
-        this.运行状态.currentPose = null
-        this.运行状态.goalPose = null
+    switch (请求.type) {
+      case 'map':
+        this.执行本地地图命令(请求, 地图列表)
         break
-      case 'load_map':
-        if (!目标地图) {
-          throw Http错误工厂.参数错误('加载地图前请先选择有效地图', 'MAP_REQUIRED')
-        }
-        this.运行状态.mode = 'map_loaded'
-        this.运行状态.mappingActive = false
-        this.运行状态.localizationActive = false
-        this.运行状态.activeMapId = 目标地图.id
-        this.运行状态.currentPose = 创建演示位姿(目标地图, 24, 18, 0.18, 0.72)
-        this.运行状态.goalPose = null
+      case 'navigation':
+        this.执行本地导航命令(请求, 地图列表)
         break
-      case 'start_localization':
-        if (!目标地图) {
-          throw Http错误工厂.参数错误('启动定位前请先加载地图', 'MAP_REQUIRED')
-        }
-        this.运行状态.mode = 'localizing'
-        this.运行状态.mappingActive = false
-        this.运行状态.localizationActive = true
-        this.运行状态.activeMapId = 目标地图.id
-        this.运行状态.currentPose = 创建演示位姿(目标地图, 28, 22, 0.36, 0.91)
-        this.运行状态.goalPose = 创建演示位姿(目标地图, 62, 36, 1.1, 0.64)
-        break
-      case 'stop_localization':
-        this.运行状态.localizationActive = false
-        this.运行状态.goalPose = null
-        this.运行状态.mode = this.运行状态.activeMapId ? 'map_loaded' : 'idle'
+      case 'patrol':
+        await this.执行本地巡逻命令(请求, 地图列表)
         break
       default:
-        throw Http错误工厂.参数错误('不支持的地图命令', 'UNSUPPORTED_COMMAND')
+        throw Http错误工厂.参数错误('不支持的工作台命令类型', 'UNSUPPORTED_COMMAND_TYPE')
     }
 
-    this.记录命令(命令, 目标地图?.id ?? null)
+    this.同步本地桩详情(地图列表)
     this.广播运行状态()
     return this.获取运行状态()
   }
@@ -221,18 +288,32 @@ export class 地图工作台服务 {
       缓存.lastUpdatedAt = new Date().toISOString()
     }
 
+    if (message.type === 'task_state' && 是对象(message.data)) {
+      缓存.taskState = { ...message.data }
+      缓存.lastUpdatedAt = new Date().toISOString()
+    }
+
+    if (message.type === 'sensor_state' && 是对象(message.data)) {
+      缓存.sensorState = { ...message.data }
+      缓存.lastUpdatedAt = new Date().toISOString()
+    }
+
     if (message.type === 'map_response' && 是对象(message.data)) {
       缓存.lastMapResponse = { ...message.data }
       缓存.lastUpdatedAt = new Date().toISOString()
-      const requestId = typeof message.data.requestId === 'string' ? message.data.requestId : ''
-      if (requestId) {
-        const pending = this.待完成命令.get(requestId)
-        if (pending) {
-          this.待完成命令.delete(requestId)
-          clearTimeout(pending.timeout)
-          pending.resolve(message.data)
-        }
-      }
+      this.处理命令响应(message.data)
+    }
+
+    if (message.type === 'navigation_response' && 是对象(message.data)) {
+      缓存.lastNavigationResponse = { ...message.data }
+      缓存.lastUpdatedAt = new Date().toISOString()
+      this.处理命令响应(message.data)
+    }
+
+    if (message.type === 'patrol_response' && 是对象(message.data)) {
+      缓存.lastPatrolResponse = { ...message.data }
+      缓存.lastUpdatedAt = new Date().toISOString()
+      this.处理命令响应(message.data)
     }
 
     if (message.type === 'lidar_scan' && 是对象(message.data)) {
@@ -298,9 +379,331 @@ export class 地图工作台服务 {
     return 地图列表.find((item) => item.id === activeMapId) ?? null
   }
 
+  private 解析请求目标地图(请求: 工作台命令请求, 地图列表: 地图元数据[]): 地图元数据 | null {
+    if (请求.type === 'map' && 请求.mapId) {
+      return 地图列表.find((item) => item.id === 请求.mapId) ?? null
+    }
+
+    const 目标地图名 =
+      请求.type === 'map'
+        ? 请求.mapName
+        : 请求.type === 'navigation'
+          ? 请求.goal?.mapName ?? null
+          : null
+
+    if (typeof 目标地图名 === 'string' && 目标地图名.trim().length > 0) {
+      return 地图列表.find((item) => item.name === 目标地图名.trim()) ?? null
+    }
+
+    return this.获取当前地图(地图列表, this.运行状态.activeMapId)
+  }
+
+  private 执行本地地图命令(请求: Extract<工作台命令请求, { type: 'map' }>, 地图列表: 地图元数据[]): void {
+    const 命令 = 请求.command
+    const 目标地图 = this.解析请求目标地图(请求, 地图列表)
+
+    switch (命令) {
+      case 'start_mapping':
+        this.运行状态.mode = 'mapping'
+        this.运行状态.mappingActive = true
+        this.运行状态.localizationActive = false
+        this.运行状态.activeMapId = null
+        this.运行状态.currentPose = null
+        this.运行状态.goalPose = null
+        this.运行状态.taskState = null
+        break
+      case 'stop_mapping':
+        this.运行状态.mappingActive = false
+        this.运行状态.localizationActive = false
+        this.运行状态.goalPose = null
+        this.运行状态.mode = 目标地图 ? 'map_loaded' : 'idle'
+        this.运行状态.activeMapId = 目标地图?.id ?? this.运行状态.activeMapId
+        this.运行状态.taskState = null
+        break
+      case 'load_map':
+        if (!目标地图) {
+          throw Http错误工厂.参数错误('加载地图前请先选择有效地图', 'MAP_REQUIRED')
+        }
+        this.运行状态.mode = 'map_loaded'
+        this.运行状态.mappingActive = false
+        this.运行状态.localizationActive = false
+        this.运行状态.activeMapId = 目标地图.id
+        this.运行状态.currentPose = 创建演示位姿(目标地图, 24, 18, 0.18, 0.72)
+        this.运行状态.goalPose = null
+        this.运行状态.taskState = null
+        break
+      case 'start_localization':
+        if (!目标地图) {
+          throw Http错误工厂.参数错误('启动定位前请先加载地图', 'MAP_REQUIRED')
+        }
+        this.运行状态.mode = 'localizing'
+        this.运行状态.mappingActive = false
+        this.运行状态.localizationActive = true
+        this.运行状态.activeMapId = 目标地图.id
+        this.运行状态.currentPose = 创建演示位姿(目标地图, 28, 22, 0.36, 0.91)
+        this.运行状态.goalPose = null
+        this.运行状态.taskState = null
+        break
+      case 'stop_localization':
+        this.运行状态.localizationActive = false
+        this.运行状态.goalPose = null
+        this.运行状态.mode = this.运行状态.activeMapId ? 'map_loaded' : 'idle'
+        this.运行状态.taskState = null
+        break
+      default:
+        throw Http错误工厂.参数错误('不支持的地图命令', 'UNSUPPORTED_COMMAND')
+    }
+
+    this.记录运行时命令('map', 命令, 目标地图?.id ?? null)
+  }
+
+  private 执行本地导航命令(请求: Extract<工作台命令请求, { type: 'navigation' }>, 地图列表: 地图元数据[]): void {
+    const 当前地图 = this.解析请求目标地图(请求, 地图列表)
+
+    switch (请求.command) {
+      case 'navigate_to':
+        if (!请求.goal) {
+          throw Http错误工厂.参数错误('导航目标不能为空', 'GOAL_REQUIRED')
+        }
+        if (!当前地图) {
+          throw Http错误工厂.参数错误('导航前请先加载地图', 'MAP_REQUIRED')
+        }
+        this.运行状态.activeMapId = 当前地图.id
+        this.运行状态.mode = 'localizing'
+        this.运行状态.localizationActive = true
+        this.运行状态.mappingActive = false
+        if (!this.运行状态.currentPose) {
+          this.运行状态.currentPose = 创建演示位姿(当前地图, 28, 22, 0.36, 0.91)
+        }
+        this.运行状态.goalPose = 由导航目标创建位姿(请求.goal)
+        this.运行状态.taskState = {
+          state: 'running',
+          task_type: 'navigation',
+          task_id: `stub-navigation-${Date.now()}`,
+        }
+        break
+      case 'cancel':
+      case 'terminate':
+        this.运行状态.goalPose = null
+        this.运行状态.taskState = this.运行状态.taskState?.task_type === 'patrol'
+          ? this.运行状态.taskState
+          : null
+        break
+      case 'pause':
+        if (!this.运行状态.taskState) {
+          throw Http错误工厂.参数错误('当前没有活动中的任务', 'TASK_NOT_ACTIVE')
+        }
+        this.运行状态.taskState = {
+          ...this.运行状态.taskState,
+          state: 'paused',
+        }
+        break
+      case 'resume':
+        if (!this.运行状态.taskState) {
+          throw Http错误工厂.参数错误('当前没有可恢复的任务', 'TASK_NOT_ACTIVE')
+        }
+        this.运行状态.taskState = {
+          ...this.运行状态.taskState,
+          state: 'running',
+        }
+        break
+      default:
+        throw Http错误工厂.参数错误('不支持的导航命令', 'UNSUPPORTED_COMMAND')
+    }
+
+    this.记录运行时命令('navigation', 请求.command, 当前地图?.id ?? this.运行状态.activeMapId)
+  }
+
+  private async 执行本地巡逻命令(请求: Extract<工作台命令请求, { type: 'patrol' }>, 地图列表: 地图元数据[]): Promise<void> {
+    const 当前地图 = this.获取当前地图(地图列表, this.运行状态.activeMapId)
+
+    switch (请求.command) {
+      case 'start_patrol': {
+        if (!请求.waypointFile || requestIsBlank(请求.waypointFile)) {
+          throw Http错误工厂.参数错误('巡逻点位文件不能为空', 'WAYPOINT_FILE_REQUIRED')
+        }
+        const 巡逻文件 = await this.读取巡逻文件详情(请求.waypointFile.trim())
+        const 第一路点 = 巡逻文件.waypoints[0]
+        if (!第一路点) {
+          throw Http错误工厂.参数错误('巡逻文件中没有可执行的路点', 'WAYPOINT_FILE_EMPTY')
+        }
+
+        const 路线地图 = 巡逻文件.mapName
+          ? 地图列表.find((item) => item.name === 巡逻文件.mapName) ?? 当前地图
+          : 当前地图
+
+        this.运行状态.activeMapId = 路线地图?.id ?? this.运行状态.activeMapId
+        this.运行状态.mode = this.运行状态.activeMapId ? 'localizing' : this.运行状态.mode
+        this.运行状态.localizationActive = this.运行状态.activeMapId !== null
+        this.运行状态.mappingActive = false
+        if (!this.运行状态.currentPose && 路线地图) {
+          this.运行状态.currentPose = 创建演示位姿(路线地图, 28, 22, 0.36, 0.91)
+        }
+        this.运行状态.goalPose = {
+          position: [第一路点.x, 第一路点.y, 0],
+          orientation: 由偏航角生成四元数(第一路点.yaw),
+          yaw: 保留三位小数(第一路点.yaw),
+          confidence: this.运行状态.currentPose?.confidence ?? 1,
+        }
+        this.运行状态.taskState = {
+          state: 'running',
+          task_type: 'patrol',
+          task_id: 请求.taskName?.trim() || 请求.waypointFile.trim(),
+          waypoint_file: 巡逻文件.path,
+          waypoint_index: 0,
+          waypoint_total: 巡逻文件.waypointCount,
+          current_waypoint_name: 第一路点.name,
+          current_waypoint_map: 巡逻文件.mapName,
+          current_lap: 1,
+        }
+        break
+      }
+      case 'pause':
+        if (!this.运行状态.taskState) {
+          throw Http错误工厂.参数错误('当前没有活动中的任务', 'TASK_NOT_ACTIVE')
+        }
+        this.运行状态.taskState = {
+          ...this.运行状态.taskState,
+          state: 'paused',
+        }
+        break
+      case 'resume':
+        if (!this.运行状态.taskState) {
+          throw Http错误工厂.参数错误('当前没有可恢复的任务', 'TASK_NOT_ACTIVE')
+        }
+        this.运行状态.taskState = {
+          ...this.运行状态.taskState,
+          state: 'running',
+        }
+        break
+      case 'terminate':
+        this.运行状态.taskState = null
+        this.运行状态.goalPose = null
+        break
+      default:
+        throw Http错误工厂.参数错误('不支持的巡逻命令', 'UNSUPPORTED_COMMAND')
+    }
+
+    this.记录运行时命令('patrol', 请求.command, 当前地图?.id ?? this.运行状态.activeMapId)
+  }
+
+  private 同步本地桩详情(地图列表: 地图元数据[]): void {
+    const 当前地图 = this.获取当前地图(地图列表, this.运行状态.activeMapId)
+    const 定位状态文本 = this.运行状态.localizationActive ? 'running' : 'idle'
+    const 导航状态文本 = this.运行状态.goalPose
+      ? (this.运行状态.taskState?.state === 'paused' ? 'paused' : 'running')
+      : 'idle'
+    const 巡逻导航目标 = this.运行状态.goalPose && this.运行状态.taskState?.task_type === 'patrol'
+      ? {
+          ...从位姿提取导航目标(
+            this.运行状态.goalPose,
+            读取字符串(this.运行状态.taskState, 'current_waypoint_map') ?? 当前地图?.name ?? null,
+          ),
+          name: 读取字符串(this.运行状态.taskState, 'current_waypoint_name') ?? null,
+          waypoint_index: 读取数值(this.运行状态.taskState, 'waypoint_index') ?? 0,
+          waypoint_total: 读取数值(this.运行状态.taskState, 'waypoint_total') ?? 0,
+          lap: 读取数值(this.运行状态.taskState, 'current_lap') ?? 1,
+        }
+      : null
+    const 导航目标 = 巡逻导航目标 ?? (this.运行状态.goalPose ? 从位姿提取导航目标(this.运行状态.goalPose, 当前地图?.name ?? null) : null)
+    const 剩余距离 = this.运行状态.currentPose && this.运行状态.goalPose
+      ? 计算平面距离(this.运行状态.currentPose, this.运行状态.goalPose)
+      : null
+    const 路径点 = this.运行状态.currentPose && this.运行状态.goalPose
+      ? [
+          {
+            x: this.运行状态.currentPose.position[0],
+            y: this.运行状态.currentPose.position[1],
+          },
+          {
+            x: this.运行状态.goalPose.position[0],
+            y: this.运行状态.goalPose.position[1],
+          },
+        ]
+      : []
+    const 雷达信息 = this.运行状态.lidarScan
+      ? {
+          connected: true,
+          enabled: true,
+          transport: 'stub',
+          frame_id: this.运行状态.lidarScan.frameId,
+          scan_ok: true,
+        }
+      : {
+          connected: false,
+          enabled: true,
+          transport: 'stub',
+          frame_id: 'laser',
+          scan_ok: false,
+        }
+
+    this.运行状态.mapState = {
+      state: this.运行状态.mappingActive
+        ? 'mapping'
+        : this.运行状态.localizationActive
+          ? 'localized'
+          : this.运行状态.activeMapId
+            ? 'loaded'
+            : 'idle',
+      current_map: 当前地图?.name,
+      last_map: 当前地图?.name ?? null,
+      save_dir: this.地图目录,
+      auto_save: true,
+    }
+
+    this.运行状态.navigationState = {
+      state: 导航状态文本,
+      current_goal: 导航目标,
+      remaining_distance: 剩余距离,
+      failure_reason: null,
+      path_points: 路径点,
+    }
+
+    this.运行状态.sensorState = {
+      lidar: 雷达信息,
+    }
+
+    this.运行状态.robotSummary = {
+      health: {
+        online: true,
+        battery: 100,
+        sdk_mode: true,
+        control_mode: 'studio_stub',
+        motion_mode: this.运行状态.mappingActive ? 'mapping' : 'navigation',
+      },
+      dog_bridge: {
+        online: true,
+        motion_control_enabled: true,
+        sdk_ready: true,
+        telemetry_online: true,
+        motion_ready: true,
+        emergency_stop: false,
+        arbitration_reason: 'normal',
+        command_age_sec: 0,
+        telemetry_age_sec: 0,
+        target_velocity: { vx: 0, vy: 0, wz: 0 },
+        output_velocity: { vx: 0, vy: 0, wz: 0 },
+      },
+      lidar: 雷达信息,
+      mapping: this.运行状态.mapState,
+      localization: {
+        state: 定位状态文本,
+        map_name: 当前地图?.name,
+        confidence: this.运行状态.currentPose?.confidence ?? null,
+      },
+      navigation: this.运行状态.navigationState,
+      task: this.运行状态.taskState ?? undefined,
+    }
+  }
+
   private 记录命令(command: 地图命令类型, mapId: string | null): void {
+    this.记录运行时命令('map', command, mapId)
+  }
+
+  private 记录运行时命令(channel: 运行时命令通道, command: 运行时命令类型, mapId: string | null): void {
     const timestamp = new Date().toISOString()
     const record: 地图命令记录 = {
+      channel,
       command,
       mapId,
       timestamp,
@@ -330,13 +733,18 @@ export class 地图工作台服务 {
   private 复制运行状态(): 地图运行状态 {
     return {
       ...this.运行状态,
-      commandHistory: [...this.运行状态.commandHistory],
-      currentPose: this.运行状态.currentPose ? { ...this.运行状态.currentPose } : null,
-      goalPose: this.运行状态.goalPose ? { ...this.运行状态.goalPose } : null,
-      lidarScan: this.运行状态.lidarScan ? 复制激光扫描(this.运行状态.lidarScan) : null,
+      commandHistory: 深复制数据(this.运行状态.commandHistory),
+      currentPose: 深复制数据(this.运行状态.currentPose),
+      goalPose: 深复制数据(this.运行状态.goalPose),
+      lidarScan: 深复制数据(this.运行状态.lidarScan),
       telemetrySource: 'stub',
       commandSource: 'stub',
       selectedRobot: null,
+      robotSummary: 深复制数据(this.运行状态.robotSummary),
+      navigationState: 深复制数据(this.运行状态.navigationState),
+      mapState: 深复制数据(this.运行状态.mapState),
+      taskState: 深复制数据(this.运行状态.taskState),
+      sensorState: 深复制数据(this.运行状态.sensorState),
     }
   }
 
@@ -375,10 +783,16 @@ export class 地图工作台服务 {
       const telemetry = await 拉取机器人完整遥测(serverUrl)
       const 机器人摘要 = 读取对象(telemetry.robot_summary)
       const 定位状态 = 读取对象(机器人摘要?.localization)
-      const 当前位姿 = 解析平面位姿(读取对象(telemetry.navigation_state)?.current_pose, 读取数值(定位状态, 'confidence') ?? 1)
-      const 目标位姿 = 解析平面位姿(读取对象(telemetry.navigation_state)?.current_goal, 读取数值(定位状态, 'confidence') ?? 1)
-      const 导航状态 = 读取对象(机器人摘要?.navigation)
+      const 原始导航状态 = 读取对象(telemetry.navigation_state)
+      const 当前位姿 = 解析平面位姿(原始导航状态?.current_pose, 读取数值(定位状态, 'confidence') ?? 1)
+      const 目标位姿 = 解析平面位姿(原始导航状态?.current_goal, 读取数值(定位状态, 'confidence') ?? 1)
+      const 导航摘要 = 读取对象(机器人摘要?.navigation)
+      const 导航状态 = 归一化导航状态(原始导航状态, 导航摘要, 当前位姿, 目标位姿)
       const 地图状态 = 读取对象(telemetry.map_state) ?? 读取对象(机器人摘要?.mapping)
+      const 原始任务状态 = 读取对象(telemetry.task_state)
+      const 任务摘要 = 读取对象(机器人摘要?.task)
+      const 任务状态 = 归一化任务状态(原始任务状态, 任务摘要, 导航状态)
+      const 传感器状态 = 读取对象(telemetry.sensor_state) ?? 构建默认传感器状态(读取对象(机器人摘要?.lidar))
       const 当前地图名 = 读取字符串(地图状态, 'current_map') ?? 读取字符串(定位状态, 'map_name')
       const 当前地图 = 当前地图名 ? 地图列表.find((item) => item.name === 当前地图名) ?? null : null
       const localizationState = 读取字符串(定位状态, 'state')
@@ -400,6 +814,11 @@ export class 地图工作台服务 {
         telemetrySource: 'robot',
         commandSource: wsConnected ? 'robot_ws' : 'pending_robot',
         selectedRobot: 机器人信息,
+        robotSummary: 深复制数据(机器人摘要 as 机器人摘要信息 | null),
+        navigationState: 深复制数据(导航状态 as 运行时导航信息 | null),
+        mapState: 深复制数据(地图状态 as 运行时地图信息 | null),
+        taskState: 深复制数据(任务状态 as 运行时任务信息 | null),
+        sensorState: 深复制数据(传感器状态 as 传感器状态信息 | null),
       }
     } catch (error) {
       机器人信息.telemetryError = error instanceof Error ? error.message : String(error)
@@ -429,9 +848,18 @@ export class 地图工作台服务 {
     const 当前地图名 = 读取字符串(地图状态, 'current_map') ?? 读取字符串(定位状态, 'map_name')
     const 当前地图 = 当前地图名 ? 地图列表.find((item) => item.name === 当前地图名) ?? null : null
     const localizationState = 读取字符串(定位状态, 'state')
-    const navigationState = 读取字符串(导航状态摘要, 'state')
+    const 归一化导航 = 归一化导航状态(
+      读取对象(缓存.navigationState),
+      导航状态摘要,
+      解析平面位姿(读取对象(缓存.navigationState)?.current_pose, 读取数值(定位状态, 'confidence') ?? 1) ?? (缓存.lidarScan?.pose ? { ...缓存.lidarScan.pose } : null),
+      解析平面位姿(读取对象(缓存.navigationState)?.current_goal, 读取数值(定位状态, 'confidence') ?? 1),
+    )
+    const 归一化任务 = 归一化任务状态(读取对象(缓存.taskState), 读取对象(缓存.robotSummary?.task), 归一化导航)
+    const navigationState = 读取字符串(归一化导航, 'state')
     const mapState = 读取字符串(地图状态, 'state')
     const confidence = 读取数值(定位状态, 'confidence') ?? 1
+    const 当前位姿 = 解析平面位姿(读取对象(缓存.navigationState)?.current_pose, confidence) ?? (缓存.lidarScan?.pose ? { ...缓存.lidarScan.pose } : null)
+    const 目标位姿 = 解析平面位姿(读取对象(缓存.navigationState)?.current_goal, confidence)
 
     机器人信息.telemetryOnline = true
     机器人信息.telemetryFetchedAt = 缓存.lastUpdatedAt
@@ -442,16 +870,21 @@ export class 地图工作台服务 {
       activeMapId: 当前地图?.id ?? null,
       mappingActive: 是否为建图态(mapState),
       localizationActive: 是否为定位态(localizationState),
-      currentPose: 解析平面位姿(读取对象(缓存.navigationState)?.current_pose, confidence) ?? (缓存.lidarScan?.pose ? { ...缓存.lidarScan.pose } : null),
-      goalPose: 解析平面位姿(读取对象(缓存.navigationState)?.current_goal, confidence),
+      currentPose: 当前位姿,
+      goalPose: 目标位姿,
       lidarScan: 缓存.lidarScan ? 复制激光扫描(缓存.lidarScan) : null,
       telemetrySource: 'robot',
       commandSource: 'robot_ws',
       selectedRobot: 机器人信息,
+      robotSummary: 深复制数据(缓存.robotSummary),
+      navigationState: 深复制数据(归一化导航),
+      mapState: 深复制数据(缓存.mapState),
+      taskState: 深复制数据(归一化任务),
+      sensorState: 深复制数据(缓存.sensorState),
     }
   }
 
-  private async 执行机器人命令(robotId: string, 请求: 地图命令请求): Promise<地图运行状态> {
+  private async 执行机器人命令(robotId: string, 请求: 工作台命令请求): Promise<地图运行状态> {
     const 机器人 = await this.机器人仓库.getRobot(robotId)
     if (!机器人) {
       throw Http错误工厂.未找到('未找到指定机器人', 'ROBOT_NOT_FOUND')
@@ -462,9 +895,10 @@ export class 地图工作台服务 {
     }
 
     const 地图列表 = await this.获取地图列表()
-    const 目标地图 = 请求.mapId ? 地图列表.find((item) => item.id === 请求.mapId) ?? null : null
+    const 目标地图 = this.解析请求目标地图(请求, 地图列表)
     const requestId = uuidv7()
-    const payload = 构建地图命令负载(requestId, 请求.command, 目标地图)
+    const payload = 构建运行时命令负载(requestId, 请求, 目标地图)
+    const messageType = 构建运行时消息类型(请求.type)
 
     const responsePromise = new Promise<Record<string, unknown>>((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -481,7 +915,7 @@ export class 地图工作台服务 {
     })
 
     const sent = this.发送到机器人(robotId, {
-      type: 'map_command',
+      type: messageType,
       robotId,
       timestamp: Date.now(),
       data: payload,
@@ -505,6 +939,22 @@ export class 地图工作台服务 {
     }
 
     return this.获取运行状态(robotId)
+  }
+
+  private 处理命令响应(data: Record<string, unknown>): void {
+    const requestId = typeof data.requestId === 'string' ? data.requestId : ''
+    if (!requestId) {
+      return
+    }
+
+    const pending = this.待完成命令.get(requestId)
+    if (!pending) {
+      return
+    }
+
+    this.待完成命令.delete(requestId)
+    clearTimeout(pending.timeout)
+    pending.resolve(data)
   }
 }
 
@@ -548,7 +998,11 @@ function 创建空机器人运行态缓存(): 机器人运行态缓存 {
     robotSummary: null,
     navigationState: null,
     mapState: null,
+    taskState: null,
+    sensorState: null,
     lastMapResponse: null,
+    lastNavigationResponse: null,
+    lastPatrolResponse: null,
     lidarScan: null,
     lastUpdatedAt: null,
   }
@@ -565,8 +1019,20 @@ function 可用类型列表(缓存: 机器人运行态缓存): string[] {
   if (缓存.mapState) {
     types.push('map_state')
   }
+  if (缓存.taskState) {
+    types.push('task_state')
+  }
+  if (缓存.sensorState) {
+    types.push('sensor_state')
+  }
   if (缓存.lastMapResponse) {
     types.push('map_response')
+  }
+  if (缓存.lastNavigationResponse) {
+    types.push('navigation_response')
+  }
+  if (缓存.lastPatrolResponse) {
+    types.push('patrol_response')
   }
   if (缓存.lidarScan) {
     types.push('lidar_scan')
@@ -643,29 +1109,70 @@ async function 打开系统目录(targetPath: string): Promise<void> {
   })
 }
 
+function 构建运行时消息类型(type: 工作台命令请求['type']): 'map_command' | 'navigation_command' | 'patrol_command' {
+  switch (type) {
+    case 'map':
+      return 'map_command'
+    case 'navigation':
+      return 'navigation_command'
+    case 'patrol':
+      return 'patrol_command'
+    default:
+      return 'map_command'
+  }
+}
+
+function 构建运行时命令负载(
+  requestId: string,
+  请求: 工作台命令请求,
+  map: 地图元数据 | null,
+): Record<string, unknown> {
+  switch (请求.type) {
+    case 'map':
+      return 构建地图命令负载(requestId, 请求.command, map, 请求.mapName)
+    case 'navigation':
+      return 构建导航命令负载(requestId, 请求)
+    case 'patrol':
+      return 构建巡逻命令负载(requestId, 请求)
+    default:
+      return {
+        requestId,
+      }
+  }
+}
+
 function 构建地图命令负载(
   requestId: string,
   command: 地图命令类型,
   map: 地图元数据 | null,
+  mapName?: string,
 ): Record<string, unknown> {
+  const 目标地图名 = typeof mapName === 'string' && mapName.trim().length > 0 ? mapName.trim() : map?.name
+
   switch (command) {
     case 'start_mapping':
       return {
         requestId,
         command: 'start_mapping',
-        map_name: map?.name,
+        map_name: 目标地图名,
+      }
+    case 'stop_mapping':
+      return {
+        requestId,
+        command: 'stop_mapping',
+        save_map: true,
       }
     case 'load_map':
       return {
         requestId,
         command: 'load_map',
-        map_name: map?.name,
+        map_name: 目标地图名,
       }
     case 'start_localization':
       return {
         requestId,
         command: 'start_localization',
-        map_name: map?.name,
+        map_name: 目标地图名,
       }
     case 'stop_localization':
       return {
@@ -677,6 +1184,56 @@ function 构建地图命令负载(
         requestId,
         command,
       }
+  }
+}
+
+function 构建导航命令负载(
+  requestId: string,
+  请求: Extract<工作台命令请求, { type: 'navigation' }>,
+): Record<string, unknown> {
+  if (请求.command === 'navigate_to') {
+    if (!请求.goal) {
+      return {
+        requestId,
+        command: 'navigate_to',
+      }
+    }
+
+    return {
+      requestId,
+      command: 'navigate_to',
+      goal: {
+        x: 请求.goal.x,
+        y: 请求.goal.y,
+        yaw: 请求.goal.yaw,
+        frame_id: 请求.goal.frameId,
+        map_name: 请求.goal.mapName ?? undefined,
+      },
+    }
+  }
+
+  return {
+    requestId,
+    command: 请求.command,
+  }
+}
+
+function 构建巡逻命令负载(
+  requestId: string,
+  请求: Extract<工作台命令请求, { type: 'patrol' }>,
+): Record<string, unknown> {
+  if (请求.command === 'start_patrol') {
+    return {
+      requestId,
+      command: 'start',
+      task_name: 请求.taskName,
+      waypoint_file: 请求.waypointFile,
+    }
+  }
+
+  return {
+    requestId,
+    command: 请求.command,
   }
 }
 
@@ -704,6 +1261,258 @@ function 解析平面位姿(value: unknown, confidence: number): 平面位姿 | 
     yaw: 从四元数解析偏航角(orientation),
     confidence: 保留两位小数(confidence),
   }
+}
+
+function 由导航目标创建位姿(goal: 导航目标): 平面位姿 {
+  return {
+    position: [保留三位小数(goal.x), 保留三位小数(goal.y), 0],
+    orientation: 由偏航角生成四元数(goal.yaw),
+    yaw: 保留三位小数(goal.yaw),
+    confidence: 1,
+  }
+}
+
+function 从位姿提取导航目标(pose: 平面位姿, mapName: string | null): Record<string, unknown> {
+  return {
+    x: 保留三位小数(pose.position[0]),
+    y: 保留三位小数(pose.position[1]),
+    yaw: pose.yaw,
+    frame_id: 'map',
+    map_name: mapName,
+  }
+}
+
+function 归一化导航状态(
+  原始导航状态: Record<string, unknown> | null,
+  导航摘要: Record<string, unknown> | null,
+  当前位姿: 平面位姿 | null,
+  目标位姿: 平面位姿 | null,
+): 运行时导航信息 | null {
+  if (!原始导航状态 && !导航摘要) {
+    return null
+  }
+
+  const 当前目标 = 归一化导航目标(
+    读取对象(原始导航状态?.current_goal) ?? 读取对象(导航摘要?.current_goal),
+    目标位姿,
+  )
+  const 路径点 = 提取路径点(原始导航状态, 当前位姿, 目标位姿)
+
+  return {
+    ...(导航摘要 ?? {}),
+    ...(原始导航状态 ?? {}),
+    state: 读取首个字符串([
+      原始导航状态 ? 读取字符串(原始导航状态, 'state') : null,
+      导航摘要 ? 读取字符串(导航摘要, 'state') : null,
+    ]) ?? undefined,
+    current_goal: 当前目标,
+    remaining_distance: 读取首个数值([
+      原始导航状态 ? 读取数值(原始导航状态, 'remaining_distance') : null,
+      原始导航状态 ? 读取数值(原始导航状态, 'remaining_distance_to_current') : null,
+      导航摘要 ? 读取数值(导航摘要, 'remaining_distance') : null,
+    ]),
+    failure_reason: 读取首个字符串([
+      原始导航状态 ? 读取字符串(原始导航状态, 'failure_reason') : null,
+      原始导航状态 ? 读取字符串(原始导航状态, 'error') : null,
+      原始导航状态 ? 读取字符串(原始导航状态, 'status_message') : null,
+      导航摘要 ? 读取字符串(导航摘要, 'failure_reason') : null,
+    ]),
+    path_points: 路径点,
+  }
+}
+
+function 归一化导航目标(value: Record<string, unknown> | null, 目标位姿: 平面位姿 | null): Record<string, unknown> | null {
+  if (!value && !目标位姿) {
+    return null
+  }
+
+  const 已归一化位置 = value ? 解析导航点(value) : null
+  const frameId = 读取首个字符串([
+    value ? 读取字符串(value, 'frame_id') : null,
+    value ? 读取字符串(value, 'frameId') : null,
+  ]) ?? 'map'
+  const mapName = 读取首个字符串([
+    value ? 读取字符串(value, 'map_name') : null,
+    value ? 读取字符串(value, 'mapName') : null,
+  ])
+
+  return {
+    ...(value ?? {}),
+    x: 已归一化位置?.x ?? (目标位姿 ? 保留三位小数(目标位姿.position[0]) : null),
+    y: 已归一化位置?.y ?? (目标位姿 ? 保留三位小数(目标位姿.position[1]) : null),
+    yaw: 已归一化位置?.yaw ?? (目标位姿 ? 目标位姿.yaw : null),
+    frame_id: frameId,
+    map_name: mapName,
+  }
+}
+
+function 提取路径点(
+  导航状态: Record<string, unknown> | null,
+  当前位姿: 平面位姿 | null,
+  目标位姿: 平面位姿 | null,
+): Array<{ x: number; y: number }> {
+  const 现成路径 = 解析路径点列表(
+    导航状态?.path_points
+    ?? 导航状态?.planned_path
+    ?? 导航状态?.path
+    ?? 导航状态?.trajectory,
+  )
+  if (现成路径.length > 0) {
+    return 现成路径
+  }
+
+  if (!当前位姿 || !目标位姿) {
+    return []
+  }
+
+  return [
+    {
+      x: 保留三位小数(当前位姿.position[0]),
+      y: 保留三位小数(当前位姿.position[1]),
+    },
+    {
+      x: 保留三位小数(目标位姿.position[0]),
+      y: 保留三位小数(目标位姿.position[1]),
+    },
+  ]
+}
+
+function 解析路径点列表(value: unknown): Array<{ x: number; y: number }> {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => 解析导航点(item))
+      .filter((item): item is { x: number; y: number; yaw?: number } => item !== null)
+      .map((item) => ({ x: item.x, y: item.y }))
+  }
+
+  if (是对象(value)) {
+    return 解析路径点列表(value.points ?? value.path ?? value.poses ?? value.waypoints)
+  }
+
+  return []
+}
+
+function 解析导航点(value: unknown): { x: number; y: number; yaw?: number } | null {
+  if (Array.isArray(value) && value.length >= 2) {
+    const x = Number(value[0])
+    const y = Number(value[1])
+    const yaw = value.length >= 3 ? Number(value[2]) : undefined
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return null
+    }
+    return {
+      x: 保留三位小数(x),
+      y: 保留三位小数(y),
+      yaw: yaw !== undefined && Number.isFinite(yaw) ? 保留三位小数(yaw) : undefined,
+    }
+  }
+
+  const point = 读取对象(value)
+  if (!point) {
+    return null
+  }
+
+  const x = 读取首个数值([
+    读取数值(point, 'x'),
+    读取对象(point.position) ? 读取数值(读取对象(point.position), 'x') : null,
+  ])
+  const y = 读取首个数值([
+    读取数值(point, 'y'),
+    读取对象(point.position) ? 读取数值(读取对象(point.position), 'y') : null,
+  ])
+  const yaw = 读取首个数值([
+    读取数值(point, 'yaw'),
+    point.orientation ? 从姿态对象解析偏航角(point.orientation) : null,
+  ])
+
+  if (x === null || y === null) {
+    const positionArray = 读取三元数值数组(point.position)
+    if (!positionArray) {
+      return null
+    }
+    return {
+      x: 保留三位小数(positionArray[0]),
+      y: 保留三位小数(positionArray[1]),
+      yaw: yaw ?? undefined,
+    }
+  }
+
+  return {
+    x: 保留三位小数(x),
+    y: 保留三位小数(y),
+    yaw: yaw ?? undefined,
+  }
+}
+
+function 归一化任务状态(
+  原始任务状态: Record<string, unknown> | null,
+  任务摘要: Record<string, unknown> | null,
+  导航状态: 运行时导航信息 | null,
+): 运行时任务信息 | null {
+  if (!原始任务状态 && !任务摘要) {
+    return null
+  }
+
+  const 当前目标 = 读取对象(导航状态?.current_goal)
+
+  return {
+    ...(任务摘要 ?? {}),
+    ...(原始任务状态 ?? {}),
+    state: 读取首个字符串([
+      原始任务状态 ? 读取字符串(原始任务状态, 'state') : null,
+      任务摘要 ? 读取字符串(任务摘要, 'state') : null,
+    ]) ?? undefined,
+    task_type: 读取首个字符串([
+      原始任务状态 ? 读取字符串(原始任务状态, 'task_type') : null,
+      任务摘要 ? 读取字符串(任务摘要, 'task_type') : null,
+    ]),
+    task_id: 读取首个字符串([
+      原始任务状态 ? 读取字符串(原始任务状态, 'task_id') : null,
+      任务摘要 ? 读取字符串(任务摘要, 'task_id') : null,
+    ]),
+    waypoint_index: 读取首个数值([
+      原始任务状态 ? 读取数值(原始任务状态, 'waypoint_index') : null,
+      当前目标 ? 读取数值(当前目标, 'waypoint_index') : null,
+    ]),
+    waypoint_total: 读取首个数值([
+      原始任务状态 ? 读取数值(原始任务状态, 'waypoint_total') : null,
+      当前目标 ? 读取数值(当前目标, 'waypoint_total') : null,
+    ]),
+    current_waypoint_name: 读取首个字符串([
+      原始任务状态 ? 读取字符串(原始任务状态, 'current_waypoint_name') : null,
+      当前目标 ? 读取字符串(当前目标, 'name') : null,
+    ]),
+    current_lap: 读取首个数值([
+      原始任务状态 ? 读取数值(原始任务状态, 'current_lap') : null,
+      当前目标 ? 读取数值(当前目标, 'lap') : null,
+    ]),
+  }
+}
+
+function 构建默认传感器状态(lidar: Record<string, unknown> | null): 传感器状态信息 | null {
+  if (!lidar) {
+    return null
+  }
+  return {
+    lidar: lidar as Record<string, unknown>,
+  }
+}
+
+function 计算平面距离(source: 平面位姿, target: 平面位姿): number {
+  const dx = target.position[0] - source.position[0]
+  const dy = target.position[1] - source.position[1]
+  return 保留两位小数(Math.sqrt(dx * dx + dy * dy))
+}
+
+function 深复制数据<T>(value: T): T {
+  if (value === null || value === undefined) {
+    return value
+  }
+  return globalThis.structuredClone(value)
+}
+
+function requestIsBlank(value: string): boolean {
+  return value.trim().length === 0
 }
 
 function 从四元数解析偏航角(orientation: [number, number, number, number]): number {
@@ -776,6 +1585,14 @@ function 读取数值(value: Record<string, unknown> | null | undefined, key: st
   return Number.isFinite(numberValue) ? numberValue : null
 }
 
+function 读取首个字符串(candidates: Array<string | null>): string | null {
+  return candidates.find((item) => typeof item === 'string' && item.trim().length > 0) ?? null
+}
+
+function 读取首个数值(candidates: Array<number | null>): number | null {
+  return candidates.find((item) => typeof item === 'number' && Number.isFinite(item)) ?? null
+}
+
 function 读取三元数值数组(value: unknown): [number, number, number] | null {
   if (!Array.isArray(value) || value.length < 3) {
     return null
@@ -800,6 +1617,27 @@ function 读取四元数值数组(value: unknown): [number, number, number, numb
   }
 
   return [numbers[0], numbers[1], numbers[2], numbers[3]]
+}
+
+function 从姿态对象解析偏航角(value: unknown): number | null {
+  const 四元数数组 = 读取四元数值数组(value)
+  if (四元数数组) {
+    return 从四元数解析偏航角(四元数数组)
+  }
+
+  const 姿态对象 = 读取对象(value)
+  if (!姿态对象) {
+    return null
+  }
+
+  const x = 读取数值(姿态对象, 'x')
+  const y = 读取数值(姿态对象, 'y')
+  const z = 读取数值(姿态对象, 'z')
+  const w = 读取数值(姿态对象, 'w')
+  if (x === null || y === null || z === null || w === null) {
+    return null
+  }
+  return 从四元数解析偏航角([x, y, z, w])
 }
 
 function 读取字符串数组(value: unknown): string[] {
@@ -840,6 +1678,140 @@ async function 递归收集地图Yaml(rootDir: string): Promise<string[]> {
   }
 
   return files
+}
+
+async function 递归收集巡逻Json(rootDir: string): Promise<string[]> {
+  const entries = await fs.readdir(rootDir, { withFileTypes: true })
+  const files: string[] = []
+
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name)
+    if (entry.isDirectory()) {
+      files.push(...await 递归收集巡逻Json(fullPath))
+      continue
+    }
+
+    if (entry.isFile() && /\.json$/i.test(entry.name)) {
+      files.push(fullPath)
+    }
+  }
+
+  return files
+}
+
+function 解析巡逻文件内容(
+  text: string,
+  默认名称: string,
+): {
+  name: string
+  mapName: string | null
+  loop: boolean
+  arrivalWaitSec: number | null
+  waypoints: 巡逻点详情[]
+} {
+  let parsed: unknown
+
+  try {
+    parsed = JSON.parse(text)
+  } catch (error) {
+    throw Http错误工厂.参数错误(
+      `巡逻文件不是有效 JSON: ${提取错误消息(error)}`,
+      'WAYPOINT_FILE_INVALID',
+    )
+  }
+
+  const 根对象 = 是记录对象(parsed) ? parsed : null
+  const 原始路点列表 = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(根对象?.waypoints)
+      ? 根对象.waypoints
+      : null
+
+  if (!原始路点列表) {
+    throw Http错误工厂.参数错误('巡逻文件缺少 waypoints 数组', 'WAYPOINT_FILE_INVALID')
+  }
+
+  const waypoints = 原始路点列表.map((item, index) => 解析巡逻点(item, index))
+
+  return {
+    name: 读取可选字符串(根对象?.name)?.trim() || 默认名称,
+    mapName: 读取可选字符串(根对象?.map_name ?? 根对象?.mapName),
+    loop: 读取可选布尔(根对象?.loop) ?? false,
+    arrivalWaitSec: 读取可选数字(根对象?.arrival_wait_sec ?? 根对象?.arrivalWaitSec),
+    waypoints,
+  }
+}
+
+function 解析巡逻点(item: unknown, index: number): 巡逻点详情 {
+  if (!是记录对象(item)) {
+    throw Http错误工厂.参数错误(`巡逻文件第 ${index + 1} 个路点格式无效`, 'WAYPOINT_FILE_INVALID')
+  }
+
+  return {
+    index,
+    name: 读取可选字符串(item.name)?.trim() || `waypoint-${index + 1}`,
+    x: 读取必填数字(item.x, `第 ${index + 1} 个路点的 x`),
+    y: 读取必填数字(item.y, `第 ${index + 1} 个路点的 y`),
+    yaw: 读取必填数字(item.yaw, `第 ${index + 1} 个路点的 yaw`),
+    frameId: 读取可选字符串(item.frame_id ?? item.frameId),
+    arrivalWaitSec: 读取可选数字(item.arrival_wait_sec ?? item.arrivalWaitSec),
+  }
+}
+
+function 是记录对象(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function 读取可选字符串(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+function 读取可选数字(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number.parseFloat(value.trim())
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
+}
+
+function 读取必填数字(value: unknown, 字段名: string): number {
+  const 数值 = 读取可选数字(value)
+  if (数值 === null) {
+    throw Http错误工厂.参数错误(`${字段名} 不是有效数字`, 'WAYPOINT_FILE_INVALID')
+  }
+  return 数值
+}
+
+function 读取可选布尔(value: unknown): boolean | null {
+  if (typeof value === 'boolean') {
+    return value
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true') {
+      return true
+    }
+    if (normalized === 'false') {
+      return false
+    }
+  }
+
+  return null
+}
+
+function 提取错误消息(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function 解析地图Yaml内容(text: string): {
@@ -922,6 +1894,12 @@ function 转义正则(value: string): string {
 
 function 生成地图Id(relativeYamlPath: string): string {
   return relativeYamlPath
+    .replace(/\.[^.]+$/, '')
+    .replace(/[\\/]+/g, '--')
+}
+
+function 生成巡逻文件Id(relativeJsonPath: string): string {
+  return relativeJsonPath
     .replace(/\.[^.]+$/, '')
     .replace(/[\\/]+/g, '--')
 }
