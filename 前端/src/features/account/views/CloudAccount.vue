@@ -916,7 +916,7 @@ function 规范化云端地址(value: string): string {
 
 .panel-card {
   border: 1px solid var(--studio-border);
-  border-radius: 24px;
+  border-radius: 8px;
   background: var(--studio-card-background);
   box-shadow: var(--studio-shadow);
 }

@@ -1698,7 +1698,7 @@ onMounted(async () => {
 .discovery-card,
 .create-dialog-stack :deep(.el-table),
 .create-dialog-stack :deep(.el-alert) {
-  border-radius: 24px;
+  border-radius: 8px;
 }
 
 .overview-panel,
@@ -1897,7 +1897,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--studio-border);
-  border-radius: 24px;
+  border-radius: 8px;
   background: var(--studio-panel-background-strong);
 }
 

@@ -155,7 +155,7 @@ function handleDeveloperSettingsChange(value: boolean): void {
 .settings-list {
   overflow: hidden;
   border: 1px solid var(--el-border-color-light);
-  border-radius: 18px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--el-bg-color) 94%, white 6%);
 }
 

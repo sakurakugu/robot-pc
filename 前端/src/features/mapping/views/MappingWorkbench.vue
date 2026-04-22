@@ -40,573 +40,325 @@
 
     <div class="workbench-grid">
       <aside class="panel maps-panel">
-        <div class="panel-header">
-          <div>
-            <h2>地图仓库</h2>
-            <p>自动扫描本地 `yaml + pgm/png` 地图</p>
-          </div>
-          <div class="panel-actions">
-            <el-tag type="info">
-              {{ maps.length }} 张
-            </el-tag>
-            <el-button
-              plain
-              :loading="openingDirectory"
-              @click="openMapDirectory"
-            >
-              打开目录
-            </el-button>
-          </div>
-        </div>
-
-        <div
-          v-if="maps.length === 0"
-          class="empty-state"
-        >
-          <el-empty description="暂无可用地图">
-            <template #description>
-              <div class="empty-description">
-                <p>请把地图文件放到本地目录后刷新：</p>
-                <code>{{ runtime.mapDirectory || '加载中...' }}</code>
-              </div>
-            </template>
-          </el-empty>
-        </div>
-
-        <div
-          v-else
-          class="map-list"
-        >
-          <button
-            v-for="item in maps"
-            :key="item.id"
-            type="button"
-            class="map-card"
-            :class="{ active: item.id === selectedMapId }"
-            @click="selectedMapId = item.id"
-          >
-            <div class="map-card-top">
-              <div>
-                <strong>{{ item.name }}</strong>
-                <p>{{ item.imageFormat.toUpperCase() }} / {{ item.resolution.toFixed(3) }}m</p>
-              </div>
-              <el-tag
-                size="small"
-                :type="runtime.activeMapId === item.id ? 'success' : 'info'"
-              >
-                {{ runtime.activeMapId === item.id ? '当前' : '待选' }}
+        <div class="panel-surface">
+          <div class="panel-header">
+            <div>
+              <h2>地图仓库</h2>
+              <p>自动扫描本地 `yaml + pgm/png` 地图</p>
+            </div>
+            <div class="panel-actions">
+              <el-tag type="info">
+                {{ maps.length }} 张
               </el-tag>
+              <el-button
+                plain
+                :loading="openingDirectory"
+                @click="openMapDirectory"
+              >
+                打开目录
+              </el-button>
             </div>
-            <div class="map-card-meta">
-              <span>原点 {{ formatOrigin(item.origin) }}</span>
-              <span>更新时间 {{ formatTime(item.updatedAt) }}</span>
-            </div>
-          </button>
+          </div>
+
+          <el-alert
+            v-if="showRobotMapHint"
+            class="map-source-alert"
+            type="info"
+            :closable="false"
+            show-icon
+          >
+            <template #title>
+              真机构图结果保存在机器人：{{ remoteSavedMapYamlPath || remoteMapSaveDir }}
+            </template>
+            <template #default>
+              左侧地图仓库当前只扫描工作站本地目录 `{{ runtime.mapDirectory }}`，不会自动同步真机 `{{ remoteLatestMapName || '最新' }}` 地图。
+            </template>
+          </el-alert>
+
+          <div
+            v-if="maps.length === 0"
+            class="empty-state"
+          >
+            <el-empty description="暂无可用地图">
+              <template #description>
+                <div class="empty-description">
+                  <p>请把地图文件放到本地目录后刷新：</p>
+                  <code>{{ runtime.mapDirectory || '加载中...' }}</code>
+                  <p v-if="remoteLatestMapName">
+                    最近真机地图：{{ remoteLatestMapName }}
+                  </p>
+                  <code v-if="remoteSavedMapYamlPath">{{ remoteSavedMapYamlPath }}</code>
+                </div>
+              </template>
+            </el-empty>
+          </div>
+
+          <div
+            v-else
+            class="map-list"
+          >
+            <button
+              v-for="item in maps"
+              :key="item.id"
+              type="button"
+              class="map-card"
+              :class="{ active: item.id === selectedMapId }"
+              @click="selectedMapId = item.id"
+            >
+              <div class="map-card-top">
+                <div>
+                  <strong>{{ item.name }}</strong>
+                  <p>{{ item.imageFormat.toUpperCase() }} / {{ item.resolution.toFixed(3) }}m</p>
+                </div>
+                <el-tag
+                  size="small"
+                  :type="runtime.activeMapId === item.id ? 'success' : 'info'"
+                >
+                  {{ runtime.activeMapId === item.id ? '当前' : '待选' }}
+                </el-tag>
+              </div>
+              <div class="map-card-meta">
+                <span>原点 {{ formatOrigin(item.origin) }}</span>
+                <span>更新时间 {{ formatTime(item.updatedAt) }}</span>
+              </div>
+            </button>
+          </div>
         </div>
       </aside>
 
       <main class="panel viewer-panel">
-        <div class="panel-header">
-          <div>
-            <h2>地图画布</h2>
-            <p>显示地图底图，并叠加机器人位姿、目标位姿与实时激光扫描</p>
-          </div>
-          <div class="canvas-legend">
-            <span><i class="legend-dot robot" />机器人</span>
-            <span><i class="legend-dot goal" />目标点</span>
-            <span><i class="legend-dot lidar" />激光扫描</span>
-            <span><i class="legend-dot nav-path" />导航路径</span>
-            <span><i class="legend-dot patrol-path" />巡逻路线</span>
-          </div>
-        </div>
-
-        <div
-          v-if="!selectedMap"
-          class="viewer-empty"
-        >
-          <el-empty description="请选择左侧地图" />
-        </div>
-
-        <div
-          v-else
-          class="viewer-stage"
-        >
-          <div class="map-stage-meta">
-            <span>地图文件：{{ selectedMap.yamlPath }}</span>
-            <span>图片文件：{{ selectedMap.imagePath }}</span>
-          </div>
-          <div
-            class="canvas-tip"
-            :class="{ 'canvas-tip-pending': pendingGoalAnchor }"
-          >
-            {{ pendingGoalAnchor ? '已设置目标点，请在画布上再点击一次确定朝向。' : '在画布上点击可设置导航目标；连续两次点击可精确设置朝向。' }}
-          </div>
-
-          <div class="map-canvas-scroll">
-            <div
-              v-if="mapImageBroken"
-              class="viewer-empty"
-            >
-              <el-result
-                icon="warning"
-                title="地图图片加载失败"
-                sub-title="请检查地图图片路径是否存在，或确认工作站后端是否正在运行。"
-              />
+        <div class="panel-surface">
+          <div class="panel-header">
+            <div>
+              <h2>地图画布</h2>
+              <p>显示地图底图，并叠加机器人位姿、目标位姿与实时激光扫描</p>
             </div>
+            <div class="canvas-legend">
+              <span><i class="legend-dot robot" />机器人</span>
+              <span><i class="legend-dot goal" />目标点</span>
+              <span><i class="legend-dot lidar" />激光扫描</span>
+              <span><i class="legend-dot nav-path" />导航路径</span>
+              <span><i class="legend-dot patrol-path" />巡逻路线</span>
+            </div>
+          </div>
 
+          <div
+            v-if="!selectedMap"
+            class="viewer-empty"
+          >
             <div
-              v-else
-              class="map-canvas"
-              @click="handleMapCanvasClick"
+              v-if="standaloneLidarPreviewReady"
+              class="realtime-preview"
             >
-              <img
-                ref="mapImageRef"
-                class="map-image"
-                :src="selectedMap.imageUrl"
-                :alt="selectedMap.name"
-                @load="handleImageLoad"
-                @error="handleImageError"
-              >
+              <div class="realtime-preview-header">
+                <strong>实时激光预览</strong>
+                <span>{{ standaloneLidarPreviewSummary }}</span>
+              </div>
 
               <svg
-                v-if="lidarScanPoints.length > 0"
-                class="scan-overlay"
-                :viewBox="`0 0 ${mapImageSize.width} ${mapImageSize.height}`"
-                preserveAspectRatio="none"
+                class="realtime-preview-canvas"
+                :viewBox="`0 0 ${STANDALONE_LIDAR_PREVIEW_SIZE} ${STANDALONE_LIDAR_PREVIEW_SIZE}`"
+                aria-label="实时激光预览"
               >
                 <circle
-                  v-for="point in lidarScanPoints"
+                  class="preview-ring"
+                  :cx="STANDALONE_LIDAR_PREVIEW_HALF"
+                  :cy="STANDALONE_LIDAR_PREVIEW_HALF"
+                  :r="STANDALONE_LIDAR_PREVIEW_HALF * 0.25"
+                />
+                <circle
+                  class="preview-ring"
+                  :cx="STANDALONE_LIDAR_PREVIEW_HALF"
+                  :cy="STANDALONE_LIDAR_PREVIEW_HALF"
+                  :r="STANDALONE_LIDAR_PREVIEW_HALF * 0.5"
+                />
+                <circle
+                  class="preview-ring"
+                  :cx="STANDALONE_LIDAR_PREVIEW_HALF"
+                  :cy="STANDALONE_LIDAR_PREVIEW_HALF"
+                  :r="STANDALONE_LIDAR_PREVIEW_HALF * 0.75"
+                />
+                <line
+                  class="preview-axis"
+                  :x1="STANDALONE_LIDAR_PREVIEW_HALF"
+                  y1="24"
+                  :x2="STANDALONE_LIDAR_PREVIEW_HALF"
+                  :y2="STANDALONE_LIDAR_PREVIEW_SIZE - 24"
+                />
+                <line
+                  class="preview-axis"
+                  x1="24"
+                  :y1="STANDALONE_LIDAR_PREVIEW_HALF"
+                  :x2="STANDALONE_LIDAR_PREVIEW_SIZE - 24"
+                  :y2="STANDALONE_LIDAR_PREVIEW_HALF"
+                />
+                <circle
+                  class="preview-robot"
+                  :cx="STANDALONE_LIDAR_PREVIEW_HALF"
+                  :cy="STANDALONE_LIDAR_PREVIEW_HALF"
+                  r="7"
+                />
+                <circle
+                  v-for="point in standaloneLidarPreviewPoints"
                   :key="point.id"
-                  class="scan-point"
+                  class="preview-point"
                   :cx="point.x"
                   :cy="point.y"
-                  r="1.6"
+                  r="1.8"
                 />
               </svg>
 
-              <svg
-                v-if="navigationPathPolyline || patrolRoutePolyline"
-                class="route-overlay"
-                :viewBox="`0 0 ${mapImageSize.width} ${mapImageSize.height}`"
-                preserveAspectRatio="none"
-              >
-                <polyline
-                  v-if="patrolRoutePolyline"
-                  class="patrol-route-line"
-                  :points="patrolRoutePolyline"
-                />
-                <polyline
-                  v-if="navigationPathPolyline"
-                  class="navigation-route-line"
-                  :points="navigationPathPolyline"
-                />
-                <circle
-                  v-for="item in patrolRouteMarkers"
-                  :key="`patrol-${item.index}`"
-                  class="patrol-route-point"
-                  :class="{ active: item.active }"
-                  :cx="item.x"
-                  :cy="item.y"
-                  :r="item.active ? 7 : 5"
-                />
-              </svg>
+              <p class="realtime-preview-tip">
+                当前未选择本地底图，已回退到雷达实时预览。真机地图保存后仍需同步到工作站本地目录，才能作为底图显示。
+              </p>
+            </div>
 
-              <div
-                v-if="draftGoalPoseStyle"
-                class="pose-marker draft-goal"
-                :style="draftGoalPoseStyle"
-                :title="pendingGoalAnchor ? '待确认导航朝向' : '导航表单目标'"
+            <el-empty
+              v-else
+              description="请选择左侧地图"
+            >
+              <template
+                v-if="showRobotMapHint"
+                #description
               >
-                <span class="pose-arrow pose-arrow-draft" />
+                <div class="empty-description">
+                  <p>真机最近地图：{{ remoteLatestMapName || '未上报' }}</p>
+                  <code>{{ remoteSavedMapYamlPath || remoteMapSaveDir }}</code>
+                  <p>左侧仍只展示工作站本地地图仓库。</p>
+                </div>
+              </template>
+            </el-empty>
+          </div>
+
+          <div
+            v-else
+            class="viewer-stage"
+          >
+            <div class="map-stage-meta">
+              <span>地图文件：{{ selectedMap.yamlPath }}</span>
+              <span>图片文件：{{ selectedMap.imagePath }}</span>
+            </div>
+            <div
+              class="canvas-tip"
+              :class="{ 'canvas-tip-pending': pendingGoalAnchor }"
+            >
+              {{ pendingGoalAnchor ? '已设置目标点，请在画布上再点击一次确定朝向。' : '在画布上点击可设置导航目标；连续两次点击可精确设置朝向。' }}
+            </div>
+
+            <div class="map-canvas-scroll">
+              <div
+                v-if="mapImageBroken"
+                class="viewer-empty"
+              >
+                <el-result
+                  icon="warning"
+                  title="地图图片加载失败"
+                  sub-title="请检查地图图片路径是否存在，或确认工作站后端是否正在运行。"
+                />
               </div>
 
               <div
-                v-if="currentPoseStyle"
-                class="pose-marker robot"
-                :style="currentPoseStyle"
-                title="机器人当前位置"
+                v-else
+                class="map-canvas"
+                @click="handleMapCanvasClick"
               >
-                <span class="pose-arrow" />
-              </div>
+                <img
+                  ref="mapImageRef"
+                  class="map-image"
+                  :src="selectedMap.imageUrl"
+                  :alt="selectedMap.name"
+                  @load="handleImageLoad"
+                  @error="handleImageError"
+                >
 
-              <div
-                v-if="goalPoseStyle"
-                class="pose-marker goal"
-                :style="goalPoseStyle"
-                title="目标位姿"
-              />
+                <svg
+                  v-if="lidarScanPoints.length > 0"
+                  class="scan-overlay"
+                  :viewBox="`0 0 ${mapImageSize.width} ${mapImageSize.height}`"
+                  preserveAspectRatio="none"
+                >
+                  <circle
+                    v-for="point in lidarScanPoints"
+                    :key="point.id"
+                    class="scan-point"
+                    :cx="point.x"
+                    :cy="point.y"
+                    r="1.6"
+                  />
+                </svg>
+
+                <svg
+                  v-if="navigationPathPolyline || patrolRoutePolyline"
+                  class="route-overlay"
+                  :viewBox="`0 0 ${mapImageSize.width} ${mapImageSize.height}`"
+                  preserveAspectRatio="none"
+                >
+                  <polyline
+                    v-if="patrolRoutePolyline"
+                    class="patrol-route-line"
+                    :points="patrolRoutePolyline"
+                  />
+                  <polyline
+                    v-if="navigationPathPolyline"
+                    class="navigation-route-line"
+                    :points="navigationPathPolyline"
+                  />
+                  <circle
+                    v-for="item in patrolRouteMarkers"
+                    :key="`patrol-${item.index}`"
+                    class="patrol-route-point"
+                    :class="{ active: item.active }"
+                    :cx="item.x"
+                    :cy="item.y"
+                    :r="item.active ? 7 : 5"
+                  />
+                </svg>
+
+                <div
+                  v-if="draftGoalPoseStyle"
+                  class="pose-marker draft-goal"
+                  :style="draftGoalPoseStyle"
+                  :title="pendingGoalAnchor ? '待确认导航朝向' : '导航表单目标'"
+                >
+                  <span class="pose-arrow pose-arrow-draft" />
+                </div>
+
+                <div
+                  v-if="currentPoseStyle"
+                  class="pose-marker robot"
+                  :style="currentPoseStyle"
+                  title="机器人当前位置"
+                >
+                  <span class="pose-arrow" />
+                </div>
+
+                <div
+                  v-if="goalPoseStyle"
+                  class="pose-marker goal"
+                  :style="goalPoseStyle"
+                  title="目标位姿"
+                />
+              </div>
             </div>
           </div>
         </div>
       </main>
 
       <aside class="panel runtime-panel">
-        <div class="panel-header">
-          <div>
-            <h2>运行与命令</h2>
-            <p>本地优先的建图、定位、导航与巡逻调试面板</p>
-          </div>
-        </div>
-
-        <div class="overview-grid">
-          <div
-            v-for="item in runtimeOverviewItems"
-            :key="item.label"
-            class="overview-chip"
-          >
-            <span>{{ item.label }}</span>
-            <el-tag
-              size="small"
-              :type="item.type"
-            >
-              {{ item.value }}
-            </el-tag>
-          </div>
-        </div>
-
-        <div class="runtime-section">
-          <h3>地图与定位命令</h3>
-          <div class="form-grid">
-            <el-input
-              v-model="mapNameInput"
-              placeholder="地图名称，可留空"
-            />
-          </div>
-          <div class="command-grid">
-            <el-button
-              type="warning"
-              plain
-              :disabled="!canSendCommand"
-              @click="sendMapCommand('start_mapping')"
-            >
-              开始建图
-            </el-button>
-            <el-button
-              plain
-              :disabled="!canSendCommand || !runtime.mappingActive"
-              @click="sendMapCommand('stop_mapping')"
-            >
-              停止并保存
-            </el-button>
-            <el-button
-              type="primary"
-              plain
-              :disabled="!selectedMap || !canSendCommand"
-              @click="sendMapCommand('load_map', selectedMap?.id)"
-            >
-              加载选中地图
-            </el-button>
-            <el-button
-              type="success"
-              plain
-              :disabled="!selectedMap || !canSendCommand"
-              @click="sendMapCommand('start_localization', selectedMap?.id)"
-            >
-              启动定位
-            </el-button>
-            <el-button
-              plain
-              :disabled="!runtime.localizationActive || !canSendCommand"
-              @click="sendMapCommand('stop_localization')"
-            >
-              停止定位
-            </el-button>
-          </div>
-        </div>
-
-        <div class="runtime-section">
-          <h3>单点导航</h3>
-          <div class="detail-list">
-            <div
-              v-for="item in navigationDetailItems"
-              :key="item.label"
-              class="detail-item"
-            >
-              <span>{{ item.label }}</span>
-              <strong>{{ item.value }}</strong>
-            </div>
-          </div>
-          <div
-            v-if="navigationFailureReason"
-            class="runtime-error navigation-error-panel"
-          >
-            <strong>导航失败</strong>
-            <p>{{ navigationFailureReason }}</p>
-            <p v-if="retryNavigationSummary">
-              最近目标：{{ retryNavigationSummary }}
-            </p>
-            <div
-              v-if="canRetryFailedNavigation"
-              class="section-actions section-actions--compact"
-            >
-              <el-button
-                type="danger"
-                plain
-                @click="retryFailedNavigation"
-              >
-                重试本次导航
-              </el-button>
-            </div>
-          </div>
-          <div class="form-grid form-grid--goal">
-            <el-input-number
-              v-model="navGoalX"
-              :step="0.1"
-              controls-position="right"
-              placeholder="X"
-            />
-            <el-input-number
-              v-model="navGoalY"
-              :step="0.1"
-              controls-position="right"
-              placeholder="Y"
-            />
-            <el-input-number
-              v-model="navGoalYaw"
-              :step="0.1"
-              controls-position="right"
-              placeholder="Yaw"
-            />
-            <el-input
-              v-model="navGoalFrameId"
-              placeholder="frame_id"
-            />
-            <el-input
-              v-model="navGoalMapName"
-              class="form-grid__span-2"
-              placeholder="目标地图，可留空"
-            />
-          </div>
-          <div class="section-actions">
-            <el-button
-              type="primary"
-              :disabled="!canSendCommand"
-              @click="sendNavigationCommand('navigate_to')"
-            >
-              导航到点
-            </el-button>
-            <el-button
-              :disabled="!canSendCommand"
-              @click="sendNavigationCommand('cancel')"
-            >
-              取消导航
-            </el-button>
-          </div>
-        </div>
-
-        <div class="runtime-section">
-          <h3>任务与巡逻</h3>
-          <div class="detail-list">
-            <div
-              v-for="item in taskDetailItems"
-              :key="item.label"
-              class="detail-item"
-            >
-              <span>{{ item.label }}</span>
-              <strong>{{ item.value }}</strong>
-            </div>
-          </div>
-          <div class="form-grid">
-            <el-input
-              v-model="patrolTaskName"
-              placeholder="巡逻任务名，可留空"
-            />
-            <el-select
-              v-model="patrolWaypointFile"
-              filterable
-              clearable
-              placeholder="选择巡逻点位文件"
-            >
-              <el-option
-                v-for="item in waypointFiles"
-                :key="item.id"
-                :label="item.name"
-                :value="item.path"
-              >
-                <div class="robot-option">
-                  <span>{{ item.name }}</span>
-                  <small>{{ item.path }}</small>
-                </div>
-              </el-option>
-            </el-select>
-          </div>
-          <div class="section-actions">
-            <el-button
-              plain
-              :loading="loadingWaypoints"
-              @click="refreshWaypoints"
-            >
-              刷新巡逻文件
-            </el-button>
-            <el-button
-              plain
-              :loading="openingWaypointDirectory"
-              @click="openWaypointDirectory"
-            >
-              打开巡逻目录
-            </el-button>
-          </div>
-          <div
-            v-if="patrolWaypointFile"
-            class="patrol-preview"
-          >
-            <div class="patrol-preview-header">
+        <div class="panel-surface">
+          <div class="runtime-panel-scroll">
+            <div class="panel-header">
               <div>
-                <strong>{{ waypointFileDetail?.name || '巡逻文件预览' }}</strong>
-                <p>{{ selectedWaypointFile?.path || patrolWaypointFile }}</p>
+                <h2>运行与命令</h2>
+                <p>本地优先的建图、定位、导航与巡逻调试面板</p>
               </div>
-              <el-tag
-                size="small"
-                type="info"
-              >
-                {{ waypointFileDetail?.waypointCount ?? 0 }} 点
-              </el-tag>
             </div>
 
-            <div
-              v-if="loadingWaypointDetail"
-              class="history-empty"
-            >
-              正在读取巡逻文件详情...
-            </div>
-            <div
-              v-else-if="waypointFileDetail"
-              class="patrol-preview-body"
-            >
+            <div class="overview-grid">
               <div
-                v-if="patrolMapValidationMessage"
-                class="runtime-tip"
-                :class="{ 'runtime-tip-success': patrolMapValidationType === 'success' }"
-              >
-                {{ patrolMapValidationMessage }}
-              </div>
-              <div class="detail-list">
-                <div class="detail-item">
-                  <span>路线名</span>
-                  <strong>{{ waypointFileDetail.name }}</strong>
-                </div>
-                <div class="detail-item">
-                  <span>地图名</span>
-                  <strong>{{ waypointFileDetail.mapName || '未填写' }}</strong>
-                </div>
-                <div class="detail-item">
-                  <span>是否循环</span>
-                  <strong>{{ waypointFileDetail.loop ? '是' : '否' }}</strong>
-                </div>
-                <div class="detail-item">
-                  <span>默认等待</span>
-                  <strong>{{ formatWaitSeconds(waypointFileDetail.arrivalWaitSec) }}</strong>
-                </div>
-                <div class="detail-item">
-                  <span>更新时间</span>
-                  <strong>{{ formatTime(waypointFileDetail.updatedAt) }}</strong>
-                </div>
-              </div>
-
-              <div class="patrol-waypoint-list">
-                <div
-                  v-for="item in waypointFileDetail.waypoints"
-                  :key="`${item.index}-${item.name}`"
-                  class="patrol-waypoint-card"
-                  :class="{ active: isSelectedWaypointRunning && activePatrolWaypointIndex === item.index }"
-                >
-                  <div class="patrol-waypoint-top">
-                    <strong>{{ item.name }}</strong>
-                    <el-tag size="small">
-                      #{{ item.index + 1 }}
-                    </el-tag>
-                  </div>
-                  <p>{{ formatWaypointPose(item) }}</p>
-                  <p>坐标系 {{ item.frameId || '未填写' }} / 等待 {{ formatWaitSeconds(item.arrivalWaitSec) }}</p>
-                </div>
-              </div>
-            </div>
-            <div
-              v-else
-              class="runtime-error"
-            >
-              当前巡逻文件详情读取失败，请刷新后重试。
-            </div>
-          </div>
-          <div
-            v-if="patrolProgressItems.length > 0"
-            class="detail-list patrol-progress-list"
-          >
-            <div
-              v-for="item in patrolProgressItems"
-              :key="item.label"
-              class="detail-item"
-            >
-              <span>{{ item.label }}</span>
-              <strong>{{ item.value }}</strong>
-            </div>
-          </div>
-          <div class="section-actions">
-            <el-button
-              type="primary"
-              :disabled="!canSendCommand"
-              @click="sendPatrolCommand('start_patrol')"
-            >
-              开始巡逻
-            </el-button>
-            <el-button
-              :disabled="!canSendCommand"
-              @click="sendTaskControl('pause')"
-            >
-              暂停任务
-            </el-button>
-            <el-button
-              :disabled="!canSendCommand"
-              @click="sendTaskControl('resume')"
-            >
-              恢复任务
-            </el-button>
-            <el-button
-              :disabled="!canSendCommand"
-              @click="sendTaskControl('terminate')"
-            >
-              终止任务
-            </el-button>
-          </div>
-        </div>
-
-        <div
-          v-if="runtime.commandSource === 'pending_robot'"
-          class="runtime-tip"
-        >
-          已读取真机遥测，但当前机器人未连接到工作站业务通道，命令按钮已禁用。
-        </div>
-
-        <div
-          v-if="runtime.commandSource === 'robot_ws'"
-          class="runtime-tip runtime-tip-success"
-        >
-          当前机器人已连接到工作站业务通道，命令会直接通过 `robot-agent` 下发。
-        </div>
-
-        <div class="runtime-section">
-          <h3>机器人遥测</h3>
-          <div
-            v-if="!runtime.selectedRobot"
-            class="history-empty"
-          >
-            当前未选择机器人，页面使用工作站本地桩状态。
-          </div>
-          <div
-            v-else
-            class="robot-runtime-card"
-          >
-            <div class="robot-runtime-top">
-              <strong>{{ runtime.selectedRobot.name }}</strong>
-              <el-tag :type="robotStatusSummaryType">
-                {{ robotStatusSummaryText }}
-              </el-tag>
-            </div>
-            <div class="robot-connection-grid">
-              <div
-                v-for="item in robotConnectionItems"
+                v-for="item in runtimeOverviewItems"
                 :key="item.label"
-                class="robot-connection-item"
+                class="overview-chip"
               >
                 <span>{{ item.label }}</span>
                 <el-tag
@@ -617,107 +369,463 @@
                 </el-tag>
               </div>
             </div>
-            <div class="robot-runtime-meta">
-              <span>IP: {{ runtime.selectedRobot.ip }}</span>
-              <span>服务: {{ runtime.selectedRobot.serverUrl || '-' }}</span>
-              <span>状态: {{ runtime.selectedRobot.status }}</span>
-              <span>工作站通道: {{ runtime.selectedRobot.wsConnected ? '已连接' : '未连接' }}</span>
-              <span>拉取时间: {{ runtime.selectedRobot.telemetryFetchedAt ? formatTime(runtime.selectedRobot.telemetryFetchedAt) : '-' }}</span>
+
+            <div class="runtime-section">
+              <h3>地图与定位命令</h3>
+              <div class="form-grid">
+                <el-input
+                  v-model="mapNameInput"
+                  placeholder="地图名称，可留空"
+                />
+              </div>
+              <div class="command-grid">
+                <el-button
+                  type="warning"
+                  plain
+                  :disabled="!canSendCommand"
+                  @click="sendMapCommand('start_mapping')"
+                >
+                  开始建图
+                </el-button>
+                <el-button
+                  plain
+                  :disabled="!canSendCommand || !runtime.mappingActive"
+                  @click="sendMapCommand('stop_mapping')"
+                >
+                  停止并保存
+                </el-button>
+                <el-button
+                  type="primary"
+                  plain
+                  :disabled="!selectedMap || !canSendCommand"
+                  @click="sendMapCommand('load_map', selectedMap?.id)"
+                >
+                  加载选中地图
+                </el-button>
+                <el-button
+                  type="success"
+                  plain
+                  :disabled="!selectedMap || !canSendCommand"
+                  @click="sendMapCommand('start_localization', selectedMap?.id)"
+                >
+                  启动定位
+                </el-button>
+                <el-button
+                  plain
+                  :disabled="!runtime.localizationActive || !canSendCommand"
+                  @click="sendMapCommand('stop_localization')"
+                >
+                  停止定位
+                </el-button>
+              </div>
             </div>
-            <div
-              v-if="runtime.selectedRobot.telemetryError"
-              class="runtime-error"
-            >
-              {{ runtime.selectedRobot.telemetryError }}
-            </div>
-            <div
-              v-if="runtime.selectedRobot.telemetryAvailableTypes.length > 0"
-              class="telemetry-tags"
-            >
-              <el-tag
-                v-for="type in runtime.selectedRobot.telemetryAvailableTypes"
-                :key="type"
-                size="small"
-                effect="plain"
+
+            <div class="runtime-section">
+              <h3>单点导航</h3>
+              <div class="detail-list">
+                <div
+                  v-for="item in navigationDetailItems"
+                  :key="item.label"
+                  class="detail-item"
+                >
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+              <div
+                v-if="navigationFailureReason"
+                class="runtime-error navigation-error-panel"
               >
-                {{ type }}
-              </el-tag>
+                <strong>导航失败</strong>
+                <p>{{ navigationFailureReason }}</p>
+                <p v-if="retryNavigationSummary">
+                  最近目标：{{ retryNavigationSummary }}
+                </p>
+                <div
+                  v-if="canRetryFailedNavigation"
+                  class="section-actions section-actions--compact"
+                >
+                  <el-button
+                    type="danger"
+                    plain
+                    @click="retryFailedNavigation"
+                  >
+                    重试本次导航
+                  </el-button>
+                </div>
+              </div>
+              <div class="form-grid form-grid--goal">
+                <el-input-number
+                  v-model="navGoalX"
+                  :step="0.1"
+                  controls-position="right"
+                  placeholder="X"
+                />
+                <el-input-number
+                  v-model="navGoalY"
+                  :step="0.1"
+                  controls-position="right"
+                  placeholder="Y"
+                />
+                <el-input-number
+                  v-model="navGoalYaw"
+                  :step="0.1"
+                  controls-position="right"
+                  placeholder="Yaw"
+                />
+                <el-input
+                  v-model="navGoalFrameId"
+                  placeholder="frame_id"
+                />
+                <el-input
+                  v-model="navGoalMapName"
+                  class="form-grid__span-2"
+                  placeholder="目标地图，可留空"
+                />
+              </div>
+              <div class="section-actions">
+                <el-button
+                  type="primary"
+                  :disabled="!canSendCommand"
+                  @click="sendNavigationCommand('navigate_to')"
+                >
+                  导航到点
+                </el-button>
+                <el-button
+                  :disabled="!canSendCommand"
+                  @click="sendNavigationCommand('cancel')"
+                >
+                  取消导航
+                </el-button>
+              </div>
             </div>
-          </div>
-        </div>
 
-        <div class="runtime-section">
-          <h3>地图与定位状态</h3>
-          <div class="detail-list">
-            <div
-              v-for="item in mapDetailItems"
-              :key="item.label"
-              class="detail-item"
-            >
-              <span>{{ item.label }}</span>
-              <strong>{{ item.value }}</strong>
+            <div class="runtime-section">
+              <h3>任务与巡逻</h3>
+              <div class="detail-list">
+                <div
+                  v-for="item in taskDetailItems"
+                  :key="item.label"
+                  class="detail-item"
+                >
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+              <div class="form-grid">
+                <el-input
+                  v-model="patrolTaskName"
+                  placeholder="巡逻任务名，可留空"
+                />
+                <el-select
+                  v-model="patrolWaypointFile"
+                  filterable
+                  clearable
+                  placeholder="选择巡逻点位文件"
+                >
+                  <el-option
+                    v-for="item in waypointFiles"
+                    :key="item.id"
+                    :label="item.name"
+                    :value="item.path"
+                  >
+                    <div class="robot-option">
+                      <span>{{ item.name }}</span>
+                      <small>{{ item.path }}</small>
+                    </div>
+                  </el-option>
+                </el-select>
+              </div>
+              <div class="section-actions">
+                <el-button
+                  plain
+                  :loading="loadingWaypoints"
+                  @click="refreshWaypoints"
+                >
+                  刷新巡逻文件
+                </el-button>
+                <el-button
+                  plain
+                  :loading="openingWaypointDirectory"
+                  @click="openWaypointDirectory"
+                >
+                  打开巡逻目录
+                </el-button>
+              </div>
+              <div
+                v-if="patrolWaypointFile"
+                class="patrol-preview"
+              >
+                <div class="patrol-preview-header">
+                  <div>
+                    <strong>{{ waypointFileDetail?.name || '巡逻文件预览' }}</strong>
+                    <p>{{ selectedWaypointFile?.path || patrolWaypointFile }}</p>
+                  </div>
+                  <el-tag
+                    size="small"
+                    type="info"
+                  >
+                    {{ waypointFileDetail?.waypointCount ?? 0 }} 点
+                  </el-tag>
+                </div>
+
+                <div
+                  v-if="loadingWaypointDetail"
+                  class="history-empty"
+                >
+                  正在读取巡逻文件详情...
+                </div>
+                <div
+                  v-else-if="waypointFileDetail"
+                  class="patrol-preview-body"
+                >
+                  <div
+                    v-if="patrolMapValidationMessage"
+                    class="runtime-tip"
+                    :class="{ 'runtime-tip-success': patrolMapValidationType === 'success' }"
+                  >
+                    {{ patrolMapValidationMessage }}
+                  </div>
+                  <div class="detail-list">
+                    <div class="detail-item">
+                      <span>路线名</span>
+                      <strong>{{ waypointFileDetail.name }}</strong>
+                    </div>
+                    <div class="detail-item">
+                      <span>地图名</span>
+                      <strong>{{ waypointFileDetail.mapName || '未填写' }}</strong>
+                    </div>
+                    <div class="detail-item">
+                      <span>是否循环</span>
+                      <strong>{{ waypointFileDetail.loop ? '是' : '否' }}</strong>
+                    </div>
+                    <div class="detail-item">
+                      <span>默认等待</span>
+                      <strong>{{ formatWaitSeconds(waypointFileDetail.arrivalWaitSec) }}</strong>
+                    </div>
+                    <div class="detail-item">
+                      <span>更新时间</span>
+                      <strong>{{ formatTime(waypointFileDetail.updatedAt) }}</strong>
+                    </div>
+                  </div>
+
+                  <div class="patrol-waypoint-list">
+                    <div
+                      v-for="item in waypointFileDetail.waypoints"
+                      :key="`${item.index}-${item.name}`"
+                      class="patrol-waypoint-card"
+                      :class="{ active: isSelectedWaypointRunning && activePatrolWaypointIndex === item.index }"
+                    >
+                      <div class="patrol-waypoint-top">
+                        <strong>{{ item.name }}</strong>
+                        <el-tag size="small">
+                          #{{ item.index + 1 }}
+                        </el-tag>
+                      </div>
+                      <p>{{ formatWaypointPose(item) }}</p>
+                      <p>坐标系 {{ item.frameId || '未填写' }} / 等待 {{ formatWaitSeconds(item.arrivalWaitSec) }}</p>
+                    </div>
+                  </div>
+                </div>
+                <div
+                  v-else
+                  class="runtime-error"
+                >
+                  当前巡逻文件详情读取失败，请刷新后重试。
+                </div>
+              </div>
+              <div
+                v-if="patrolProgressItems.length > 0"
+                class="detail-list patrol-progress-list"
+              >
+                <div
+                  v-for="item in patrolProgressItems"
+                  :key="item.label"
+                  class="detail-item"
+                >
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+              <div class="section-actions">
+                <el-button
+                  type="primary"
+                  :disabled="!canSendCommand"
+                  @click="sendPatrolCommand('start_patrol')"
+                >
+                  开始巡逻
+                </el-button>
+                <el-button
+                  :disabled="!canSendCommand"
+                  @click="sendTaskControl('pause')"
+                >
+                  暂停任务
+                </el-button>
+                <el-button
+                  :disabled="!canSendCommand"
+                  @click="sendTaskControl('resume')"
+                >
+                  恢复任务
+                </el-button>
+                <el-button
+                  :disabled="!canSendCommand"
+                  @click="sendTaskControl('terminate')"
+                >
+                  终止任务
+                </el-button>
+              </div>
             </div>
-          </div>
-        </div>
 
-        <div class="runtime-section">
-          <h3>运控桥与雷达</h3>
-          <div class="detail-list">
             <div
-              v-for="item in bridgeDetailItems"
-              :key="item.label"
-              class="detail-item"
+              v-if="runtime.commandSource === 'pending_robot'"
+              class="runtime-tip"
             >
-              <span>{{ item.label }}</span>
-              <strong>{{ item.value }}</strong>
+              已读取真机遥测，但当前机器人未连接到工作站业务通道，命令按钮已禁用。
             </div>
+
             <div
-              v-for="item in sensorDetailItems"
-              :key="item.label"
-              class="detail-item"
+              v-if="runtime.commandSource === 'robot_ws'"
+              class="runtime-tip runtime-tip-success"
             >
-              <span>{{ item.label }}</span>
-              <strong>{{ item.value }}</strong>
+              当前机器人已连接到工作站业务通道，命令会直接通过 `robot-agent` 下发。
             </div>
-          </div>
-        </div>
 
-        <div class="runtime-section">
-          <h3>位姿数据</h3>
-          <div class="pose-card">
-            <p class="pose-title">
-              机器人位姿
-            </p>
-            <p>{{ formatPose(currentPose) }}</p>
-          </div>
-          <div class="pose-card">
-            <p class="pose-title">
-              目标位姿
-            </p>
-            <p>{{ formatPose(runtime.goalPose) }}</p>
-          </div>
-        </div>
+            <div class="runtime-section">
+              <h3>机器人遥测</h3>
+              <div
+                v-if="!runtime.selectedRobot"
+                class="history-empty"
+              >
+                当前未选择机器人，页面使用工作站本地桩状态。
+              </div>
+              <div
+                v-else
+                class="robot-runtime-card"
+              >
+                <div class="robot-runtime-top">
+                  <strong>{{ runtime.selectedRobot.name }}</strong>
+                  <el-tag :type="robotStatusSummaryType">
+                    {{ robotStatusSummaryText }}
+                  </el-tag>
+                </div>
+                <div class="robot-connection-grid">
+                  <div
+                    v-for="item in robotConnectionItems"
+                    :key="item.label"
+                    class="robot-connection-item"
+                  >
+                    <span>{{ item.label }}</span>
+                    <el-tag
+                      size="small"
+                      :type="item.type"
+                    >
+                      {{ item.value }}
+                    </el-tag>
+                  </div>
+                </div>
+                <div class="robot-runtime-meta">
+                  <span>IP: {{ runtime.selectedRobot.ip }}</span>
+                  <span>服务: {{ runtime.selectedRobot.serverUrl || '-' }}</span>
+                  <span>状态: {{ runtime.selectedRobot.status }}</span>
+                  <span>工作站通道: {{ runtime.selectedRobot.wsConnected ? '已连接' : '未连接' }}</span>
+                  <span>拉取时间: {{ runtime.selectedRobot.telemetryFetchedAt ? formatTime(runtime.selectedRobot.telemetryFetchedAt) : '-' }}</span>
+                </div>
+                <div
+                  v-if="runtime.selectedRobot.telemetryError"
+                  class="runtime-error"
+                >
+                  {{ runtime.selectedRobot.telemetryError }}
+                </div>
+                <div
+                  v-if="runtime.selectedRobot.telemetryAvailableTypes.length > 0"
+                  class="telemetry-tags"
+                >
+                  <el-tag
+                    v-for="type in runtime.selectedRobot.telemetryAvailableTypes"
+                    :key="type"
+                    size="small"
+                    effect="plain"
+                  >
+                    {{ type }}
+                  </el-tag>
+                </div>
+              </div>
+            </div>
 
-        <div class="runtime-section">
-          <h3>命令历史</h3>
-          <div
-            v-if="runtime.commandHistory.length === 0"
-            class="history-empty"
-          >
-            暂无命令记录
-          </div>
-          <div
-            v-else
-            class="history-list"
-          >
-            <div
-              v-for="record in runtime.commandHistory"
-              :key="`${record.timestamp}-${record.channel}-${record.command}`"
-              class="history-item"
-            >
-              <strong>{{ commandLabelMap[record.command] }}</strong>
-              <span>{{ commandChannelLabelMap[record.channel] }} / {{ record.mapId || '无附加地图' }}</span>
-              <time>{{ formatTime(record.timestamp) }}</time>
+            <div class="runtime-section">
+              <h3>地图与定位状态</h3>
+              <div class="detail-list">
+                <div
+                  v-for="item in mapDetailItems"
+                  :key="item.label"
+                  class="detail-item"
+                >
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="runtime-section">
+              <h3>运控桥与雷达</h3>
+              <div class="detail-list">
+                <div
+                  v-for="item in bridgeDetailItems"
+                  :key="item.label"
+                  class="detail-item"
+                >
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+                <div
+                  v-for="item in sensorDetailItems"
+                  :key="item.label"
+                  class="detail-item"
+                >
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="runtime-section">
+              <h3>位姿数据</h3>
+              <div class="pose-card">
+                <p class="pose-title">
+                  机器人位姿
+                </p>
+                <p>{{ formatPose(currentPose) }}</p>
+              </div>
+              <div class="pose-card">
+                <p class="pose-title">
+                  目标位姿
+                </p>
+                <p>{{ formatPose(runtime.goalPose) }}</p>
+              </div>
+            </div>
+
+            <div class="runtime-section">
+              <h3>命令历史</h3>
+              <div
+                v-if="runtime.commandHistory.length === 0"
+                class="history-empty"
+              >
+                暂无命令记录
+              </div>
+              <div
+                v-else
+                class="history-list"
+              >
+                <div
+                  v-for="record in runtime.commandHistory"
+                  :key="`${record.timestamp}-${record.channel}-${record.command}`"
+                  class="history-item"
+                >
+                  <strong>{{ commandLabelMap[record.command] }}</strong>
+                  <span>{{ commandChannelLabelMap[record.channel] }} / {{ record.mapId || '无附加地图' }}</span>
+                  <time>{{ formatTime(record.timestamp) }}</time>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -820,6 +928,8 @@ const commandChannelLabelMap = {
   navigation: '导航命令',
   patrol: '巡逻命令',
 } as const
+const STANDALONE_LIDAR_PREVIEW_SIZE = 520
+const STANDALONE_LIDAR_PREVIEW_HALF = STANDALONE_LIDAR_PREVIEW_SIZE / 2
 
 const canSendCommand = computed(() => runtime.value.commandSource === 'stub' || runtime.value.commandSource === 'robot_ws')
 const selectedMap = computed(() => maps.value.find((item) => item.id === selectedMapId.value) || null)
@@ -827,6 +937,23 @@ const selectedWaypointFile = computed(() => waypointFiles.value.find((item) => i
 const activeMap = computed(() => maps.value.find((item) => item.id === runtime.value.activeMapId) || null)
 const currentPose = computed(() => runtime.value.lidarScan?.pose ?? runtime.value.currentPose)
 const currentPoseStyle = computed(() => buildPoseStyle(currentPose.value, true))
+const remoteMapSaveDir = computed(() => extractStringField(mapRuntimeState.value ?? {}, ['save_dir']))
+const remoteLatestMapName = computed(() => extractStringField(mapRuntimeState.value ?? {}, ['last_map']))
+const remoteSavedMapYamlPath = computed(() => {
+  if (!remoteMapSaveDir.value || !remoteLatestMapName.value) {
+    return ''
+  }
+  return joinDisplayPath(remoteMapSaveDir.value, `${remoteLatestMapName.value}.yaml`)
+})
+const showRobotMapHint = computed(() => {
+  if (!runtime.value.selectedRobot || !runtime.value.selectedRobot.wsConnected) {
+    return false
+  }
+  if (!remoteMapSaveDir.value) {
+    return false
+  }
+  return normalizeDisplayPath(remoteMapSaveDir.value) !== normalizeDisplayPath(runtime.value.mapDirectory)
+})
 const draftGoalPoseStyle = computed(() => {
   if (!showDraftGoal.value || !selectedMap.value || mapImageSize.value.width <= 0 || mapImageSize.value.height <= 0) {
     return null
@@ -849,6 +976,15 @@ const draftGoalPoseStyle = computed(() => {
 })
 const goalPoseStyle = computed(() => buildPoseStyle(runtime.value.goalPose, false))
 const lidarScanPoints = computed(() => buildLidarScanPoints(runtime.value.lidarScan, currentPose.value))
+const standaloneLidarPreviewPoints = computed(() => buildStandaloneLidarPreviewPoints(runtime.value.lidarScan))
+const standaloneLidarPreviewReady = computed(() => !selectedMap.value && standaloneLidarPreviewPoints.value.length > 0)
+const standaloneLidarPreviewSummary = computed(() => {
+  const scan = runtime.value.lidarScan
+  if (!scan) {
+    return '等待激光数据'
+  }
+  return `${scan.pointCount} 点 / ${scan.rangeMax.toFixed(1)}m 量程`
+})
 const mapRuntimeState = computed(() => runtime.value.mapState ?? runtime.value.robotSummary?.mapping ?? null)
 const localizationRuntimeState = computed(() => runtime.value.robotSummary?.localization ?? null)
 const navigationRuntimeState = computed(() => runtime.value.navigationState ?? runtime.value.robotSummary?.navigation ?? null)
@@ -1474,7 +1610,7 @@ async function sendRuntimeCommand(payload: Parameters<typeof mappingApi.sendComm
     if (response.data.activeMapId) {
       selectedMapId.value = response.data.activeMapId
     }
-    ElMessage.success(response.message || '命令已发送')
+    ElMessage.success(buildCommandSuccessMessage(payload, response.data, response.message))
   } catch (error) {
     handleRequestError(error, '命令发送失败')
   }
@@ -1800,6 +1936,45 @@ function buildLidarScanPoints(scan: LidarScan | null, pose: PlanarPose | null): 
   return points
 }
 
+function buildStandaloneLidarPreviewPoints(scan: LidarScan | null): Array<{ id: string; x: number; y: number }> {
+  if (!scan) {
+    return []
+  }
+
+  const validRanges = scan.ranges.filter((item): item is number => item !== null && item >= scan.rangeMin && item <= scan.rangeMax)
+  if (validRanges.length === 0) {
+    return []
+  }
+
+  const previewRadius = STANDALONE_LIDAR_PREVIEW_HALF * 0.9
+  const maxDistance = Math.max(2, Math.min(scan.rangeMax, Math.max(...validRanges) * 1.1))
+  const points: Array<{ id: string; x: number; y: number }> = []
+
+  for (let index = 0; index < scan.ranges.length; index += 1) {
+    const distance = scan.ranges[index]
+    if (distance === null || distance < scan.rangeMin || distance > scan.rangeMax) {
+      continue
+    }
+
+    const angle = scan.angleMin + (index * scan.angleIncrement)
+    const localX = distance * Math.cos(angle)
+    const localY = distance * Math.sin(angle)
+    const x = STANDALONE_LIDAR_PREVIEW_HALF + ((localX / maxDistance) * previewRadius)
+    const y = STANDALONE_LIDAR_PREVIEW_HALF - ((localY / maxDistance) * previewRadius)
+    if (x < 0 || y < 0 || x > STANDALONE_LIDAR_PREVIEW_SIZE || y > STANDALONE_LIDAR_PREVIEW_SIZE) {
+      continue
+    }
+
+    points.push({
+      id: `${scan.capturedAt}-${index}`,
+      x,
+      y,
+    })
+  }
+
+  return points
+}
+
 function handleRequestError(error: unknown, fallbackMessage: string): void {
   console.error(error)
   const maybeAxios = error as {
@@ -1860,6 +2035,43 @@ function parseNumericValue(value: unknown): number | undefined {
     }
   }
   return undefined
+}
+
+function normalizeDisplayPath(value: string): string {
+  return value.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+function joinDisplayPath(basePath: string, filename: string): string {
+  const trimmedBase = basePath.trim().replace(/[\\/]+$/, '')
+  const separator = trimmedBase.includes('\\') ? '\\' : '/'
+  return `${trimmedBase}${separator}${filename}`
+}
+
+function buildCommandSuccessMessage(
+  payload: Parameters<typeof mappingApi.sendCommand>[0],
+  data: MappingRuntime,
+  fallbackMessage?: string,
+): string {
+  const mapState = data.mapState ?? data.robotSummary?.mapping ?? null
+  if (payload.type === 'map' && payload.command === 'start_mapping') {
+    const currentMap = extractStringField(mapState ?? {}, ['current_map'])
+    if (currentMap) {
+      return `开始建图：${currentMap}`
+    }
+  }
+
+  if (payload.type === 'map' && payload.command === 'stop_mapping') {
+    const lastMap = extractStringField(mapState ?? {}, ['last_map'])
+    const saveDir = extractStringField(mapState ?? {}, ['save_dir'])
+    if (lastMap && saveDir) {
+      return `地图已保存到 ${joinDisplayPath(saveDir, `${lastMap}.yaml`)}`
+    }
+    if (lastMap) {
+      return `地图已保存：${lastMap}`
+    }
+  }
+
+  return fallbackMessage || '命令已发送'
 }
 
 function formatDistance(value: unknown): string {
@@ -2078,17 +2290,22 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .mapping-workbench {
-  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   padding: 20px;
+  box-sizing: border-box;
   background: var(--el-bg-color-page);
   color: var(--studio-text-primary);
+  overflow: hidden;
 }
 
 .panel {
-  border: 1px solid var(--studio-border);
-  background: var(--studio-panel-background);
-  box-shadow: var(--studio-shadow);
-  backdrop-filter: blur(14px);
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .header-actions {
@@ -2113,13 +2330,33 @@ onBeforeUnmount(() => {
 
 .workbench-grid {
   display: grid;
+  flex: 1;
   grid-template-columns: 320px minmax(0, 1fr) 420px;
+  grid-template-rows: minmax(0, 1fr);
+  grid-auto-rows: minmax(0, 1fr);
   gap: 18px;
   margin-top: 18px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .panel {
-  border-radius: 28px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel-surface {
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  background: var(--studio-panel-background);
+  box-shadow: var(--studio-shadow);
+  backdrop-filter: blur(14px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 22px;
 }
 
@@ -2129,6 +2366,7 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   gap: 16px;
   margin-bottom: 18px;
+  flex-shrink: 0;
 }
 
 .panel-header h2 {
@@ -2150,9 +2388,10 @@ onBeforeUnmount(() => {
 
 .map-list {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 12px;
-  max-height: calc(100vh - 310px);
+  min-height: 0;
   overflow: auto;
 }
 
@@ -2203,9 +2442,11 @@ onBeforeUnmount(() => {
 .empty-state,
 .viewer-empty {
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
-  min-height: 280px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .empty-description {
@@ -2228,9 +2469,15 @@ onBeforeUnmount(() => {
   word-break: break-all;
 }
 
+.map-source-alert {
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
 .viewer-panel {
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .canvas-legend {
@@ -2280,6 +2527,7 @@ onBeforeUnmount(() => {
   color: var(--studio-text-muted);
   font-size: 12px;
   word-break: break-all;
+  flex-shrink: 0;
 }
 
 .canvas-tip {
@@ -2289,6 +2537,7 @@ onBeforeUnmount(() => {
   background: rgba(59, 130, 246, 0.12);
   color: #1d4ed8;
   line-height: 1.6;
+  flex-shrink: 0;
 }
 
 .canvas-tip-pending {
@@ -2298,7 +2547,7 @@ onBeforeUnmount(() => {
 
 .map-canvas-scroll {
   flex: 1;
-  min-height: 600px;
+  min-height: 0;
   padding: 20px;
   border-radius: 24px;
   background: var(--studio-canvas-background);
@@ -2335,6 +2584,66 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+
+.realtime-preview {
+  width: min(100%, 620px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+  padding: 28px 20px;
+  border-radius: 24px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92));
+  box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.18);
+}
+
+.realtime-preview-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+.realtime-preview-header strong {
+  font-size: 15px;
+  color: #f8fafc;
+}
+
+.realtime-preview-canvas {
+  width: min(100%, 520px);
+  aspect-ratio: 1;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at center, rgba(14, 116, 144, 0.22), rgba(15, 23, 42, 0.95) 68%),
+    linear-gradient(180deg, rgba(8, 47, 73, 0.78), rgba(15, 23, 42, 0.98));
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.14);
+}
+
+.preview-ring,
+.preview-axis {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.28);
+  stroke-width: 1;
+}
+
+.preview-robot {
+  fill: #f97316;
+  stroke: rgba(255, 237, 213, 0.7);
+  stroke-width: 2;
+}
+
+.preview-point {
+  fill: rgba(34, 211, 238, 0.95);
+}
+
+.realtime-preview-tip {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.7;
+  text-align: center;
 }
 
 .scan-point {
@@ -2413,7 +2722,17 @@ onBeforeUnmount(() => {
 }
 
 .runtime-panel {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.runtime-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  padding-right: 8px;
+  margin-right: -8px;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .overview-grid {
@@ -2728,7 +3047,10 @@ onBeforeUnmount(() => {
 
 @media (max-width: 980px) {
   .mapping-workbench {
+    height: auto;
+    min-height: 100%;
     padding: 16px;
+    overflow: visible;
   }
 
   .workbench-grid,
@@ -2741,6 +3063,26 @@ onBeforeUnmount(() => {
 
   .robot-select {
     width: 100%;
+  }
+
+  .workbench-grid {
+    flex: none;
+    grid-template-rows: none;
+    grid-auto-rows: auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .panel,
+  .runtime-panel,
+  .viewer-panel,
+  .panel-surface,
+  .map-list,
+  .runtime-panel-scroll,
+  .map-canvas-scroll,
+  .empty-state,
+  .viewer-empty {
+    overflow: visible;
   }
 
   .panel-actions {
