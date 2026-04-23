@@ -181,7 +181,7 @@
               type="button"
               class="map-card"
               :class="{ active: item.id === selectedMapId }"
-              @click="selectedMapId = item.id"
+              @click="toggleSelectedMap(item.id)"
             >
               <div class="map-card-top">
                 <div>
@@ -207,9 +207,36 @@
       <main class="panel viewer-panel">
         <div class="panel-surface">
           <div class="panel-header">
-            <div>
+            <div class="viewer-header-main">
               <h2>地图画布</h2>
-              <p>显示地图底图，并叠加机器人位姿、目标位姿与实时激光扫描</p>
+              <div class="viewer-header-subline">
+                <p>显示地图底图，并叠加机器人位姿、目标位姿与实时激光扫描</p>
+                <div class="map-toolbar">
+                  <el-button-group>
+                    <el-button
+                      size="small"
+                      :icon="ZoomOut"
+                      :disabled="mapCanvasZoom <= MAP_CANVAS_MIN_ZOOM"
+                      title="缩小地图"
+                      @click="zoomOutMapCanvas"
+                    />
+                    <el-button
+                      size="small"
+                      title="恢复到适应画布（100%）"
+                      @click="resetMapCanvasZoom"
+                    >
+                      {{ mapCanvasZoomLabel }}
+                    </el-button>
+                    <el-button
+                      size="small"
+                      :icon="ZoomIn"
+                      :disabled="mapCanvasZoom >= MAP_CANVAS_MAX_ZOOM"
+                      title="放大地图"
+                      @click="zoomInMapCanvas"
+                    />
+                  </el-button-group>
+                </div>
+              </div>
             </div>
             <div class="canvas-legend">
               <span><i class="legend-dot robot" />机器人</span>
@@ -398,6 +425,7 @@
               <div
                 v-else
                 class="map-canvas"
+                :style="mapCanvasStyle"
                 @click="handleMapCanvasClick"
               >
                 <img
@@ -976,7 +1004,7 @@
 </template>
 
 <script setup lang="ts">
-import { Expand, Fold, RefreshRight } from '@element-plus/icons-vue'
+import { Expand, Fold, RefreshRight, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Map } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -1024,6 +1052,7 @@ const selectedRobotId = ref('')
 const showMapsPanel = ref(true)
 const showRuntimePanel = ref(true)
 const selectedMapId = ref<string>('')
+const userClearedMapSelection = ref(false)
 const mapNameInput = ref('')
 const navGoalX = ref(0)
 const navGoalY = ref(0)
@@ -1036,6 +1065,9 @@ const mapImageSize = ref({ width: 0, height: 0 })
 const mapImageBroken = ref(false)
 const mapImageRef = ref<HTMLImageElement | null>(null)
 const mapPreviewCanvasRef = ref<HTMLCanvasElement | null>(null)
+const MAP_CANVAS_MIN_ZOOM = 0.5
+const MAP_CANVAS_MAX_ZOOM = 2.5
+const mapCanvasZoom = ref(1)
 const showDraftGoal = ref(false)
 const pendingGoalAnchor = ref<{ x: number; y: number } | null>(null)
 const runtime = ref<MappingRuntime>({
@@ -1110,6 +1142,12 @@ const showRobotMapHint = computed(() => {
   }
   return normalizeDisplayPath(remoteMapSaveDir.value) !== normalizeDisplayPath(runtime.value.mapDirectory)
 })
+const mapCanvasStyle = computed<Record<string, string>>(() => ({
+  width: `${Math.round(mapCanvasZoom.value * 100)}%`,
+  minWidth: mapCanvasZoom.value < 1 ? '0' : '100%',
+  maxWidth: 'none',
+}))
+const mapCanvasZoomLabel = computed(() => `${Math.round(mapCanvasZoom.value * 100)}%`)
 const draftGoalPoseStyle = computed(() => {
   if (!showDraftGoal.value || !selectedMap.value || mapImageSize.value.width <= 0 || mapImageSize.value.height <= 0) {
     return null
@@ -1592,6 +1630,39 @@ const { onMessage, connect: wsConnect, disconnect: wsDisconnect } = useWebSocket
 let removeRealtimeHandler: (() => void) | null = null
 let waypointDetailRequestSerial = 0
 
+function toggleSelectedMap(mapId: string): void {
+  if (selectedMapId.value === mapId) {
+    selectedMapId.value = ''
+    userClearedMapSelection.value = true
+    return
+  }
+
+  selectedMapId.value = mapId
+  userClearedMapSelection.value = false
+}
+
+function syncSelectedMapAfterRefresh(): void {
+  const selectedMapExists = maps.value.some((item) => item.id === selectedMapId.value)
+  if (selectedMapId.value && selectedMapExists) {
+    return
+  }
+
+  if (selectedMapId.value && !selectedMapExists) {
+    selectedMapId.value = ''
+  }
+
+  if (userClearedMapSelection.value) {
+    return
+  }
+
+  if (runtime.value.activeMapId && maps.value.some((item) => item.id === runtime.value.activeMapId)) {
+    selectedMapId.value = runtime.value.activeMapId
+    return
+  }
+
+  selectedMapId.value = maps.value[0]?.id || ''
+}
+
 async function refreshAll(): Promise<void> {
   loading.value = true
   try {
@@ -1607,12 +1678,7 @@ async function refreshAll(): Promise<void> {
     robots.value = robotResponse.data.robots
     waypointFiles.value = waypointResponse.data.waypoints
     同步巡逻文件选中状态()
-
-    if (runtime.value.activeMapId && maps.value.some((item) => item.id === runtime.value.activeMapId)) {
-      selectedMapId.value = runtime.value.activeMapId
-    } else if (!maps.value.some((item) => item.id === selectedMapId.value)) {
-      selectedMapId.value = maps.value[0]?.id || ''
-    }
+    syncSelectedMapAfterRefresh()
   } catch (error) {
     handleRequestError(error, '刷新地图工作台失败')
   } finally {
@@ -1669,6 +1735,7 @@ async function downloadRemoteMap(robotId: string, map: RemoteMap): Promise<void>
     const importedMap = response.data.importedMaps[0] ?? maps.value.find((item) => item.name === map.name)
     if (importedMap) {
       selectedMapId.value = importedMap.id
+      userClearedMapSelection.value = false
     }
     ElMessage.success(response.message || `已下载地图 ${map.name}`)
   } catch (error) {
@@ -1890,6 +1957,7 @@ async function sendRuntimeCommand(payload: Parameters<typeof mappingApi.sendComm
     runtime.value = response.data
     if (response.data.activeMapId) {
       selectedMapId.value = response.data.activeMapId
+      userClearedMapSelection.value = false
     }
     ElMessage.success(buildCommandSuccessMessage(payload, response.data, response.message))
     if (payload.type === 'map' && payload.command === 'stop_mapping') {
@@ -2000,6 +2068,20 @@ function occupancyToGray(value: number): number {
     return 244
   }
   return Math.max(36, Math.min(244, 244 - Math.round(value * 2.1)))
+}
+
+function zoomOutMapCanvas(): void {
+  const step = mapCanvasZoom.value <= 1 ? 0.1 : 0.25
+  mapCanvasZoom.value = Number(Math.max(MAP_CANVAS_MIN_ZOOM, mapCanvasZoom.value - step).toFixed(2))
+}
+
+function zoomInMapCanvas(): void {
+  const step = mapCanvasZoom.value < 1 ? 0.1 : 0.25
+  mapCanvasZoom.value = Number(Math.min(MAP_CANVAS_MAX_ZOOM, mapCanvasZoom.value + step).toFixed(2))
+}
+
+function resetMapCanvasZoom(): void {
+  mapCanvasZoom.value = 1
 }
 
 function handleMapCanvasClick(event: MouseEvent): void {
@@ -2680,6 +2762,7 @@ onMounted(async () => {
 watch(selectedMapId, () => {
   mapImageBroken.value = false
   mapImageSize.value = { width: 0, height: 0 }
+  mapCanvasZoom.value = 1
   pendingGoalAnchor.value = null
   showDraftGoal.value = false
 
@@ -2862,8 +2945,22 @@ onBeforeUnmount(() => {
   font-size: 20px;
 }
 
+.viewer-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.viewer-header-subline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .panel-header p {
-  margin: 8px 0 0;
+  margin: 0;
   color: var(--studio-text-muted);
   line-height: 1.5;
 }
@@ -3098,6 +3195,12 @@ onBeforeUnmount(() => {
   color: #c2410c;
 }
 
+.map-toolbar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .map-canvas-scroll {
   flex: 1;
   min-height: 0;
@@ -3110,15 +3213,18 @@ onBeforeUnmount(() => {
 
 .map-canvas {
   position: relative;
-  display: inline-block;
-  max-width: 100%;
+  display: block;
+  min-width: 100%;
+  margin: 0 auto;
   cursor: crosshair;
 }
 
 .map-image {
   display: block;
-  max-width: min(100%, 1200px);
+  width: 100%;
+  max-width: none;
   height: auto;
+  image-rendering: pixelated;
   border-radius: 18px;
   box-shadow: 0 18px 42px rgba(2, 6, 23, 0.45);
 }
@@ -3152,11 +3258,12 @@ onBeforeUnmount(() => {
 }
 
 .realtime-map-preview {
-  width: min(100%, 920px);
+  width: 100%;
+  max-width: none;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  align-items: center;
+  align-items: stretch;
   padding: 28px 20px;
   border-radius: 24px;
   background: linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92));
@@ -3196,13 +3303,16 @@ onBeforeUnmount(() => {
 
 .realtime-map-stage {
   position: relative;
-  display: inline-block;
+  display: block;
+  width: 100%;
+  max-width: 1400px;
   margin: 0 auto;
 }
 
 .realtime-map-canvas {
   display: block;
-  max-width: 100%;
+  width: 100%;
+  max-width: none;
   height: auto;
   margin: 0 auto;
   image-rendering: pixelated;
