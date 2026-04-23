@@ -101,6 +101,20 @@ export interface LidarScan {
   pose: PlanarPose | null
 }
 
+export interface MapPreview {
+  available: boolean
+  frameId: string
+  mapName: string
+  resolution: number
+  width: number
+  height: number
+  origin: [number, number, number]
+  encoding: 'int8-base64'
+  data: string
+  capturedAt: number
+  sequence: number
+}
+
 export interface MappingCommandRecord {
   channel: RuntimeCommandChannel
   command: RuntimeCommand
@@ -207,6 +221,7 @@ export interface MappingRuntime {
   currentPose: PlanarPose | null
   goalPose: PlanarPose | null
   lidarScan: LidarScan | null
+  mapPreview: MapPreview | null
   lastCommand: RuntimeCommand | null
   lastCommandAt: string | null
   commandHistory: MappingCommandRecord[]

@@ -221,11 +221,71 @@
           </div>
 
           <div
-            v-if="!selectedMap"
+            v-if="showRealtimeMapPreview || !selectedMap"
             class="viewer-empty"
           >
             <div
-              v-if="standaloneLidarPreviewReady"
+              v-if="realtimeMapPreviewReady"
+              class="realtime-map-preview"
+            >
+              <div class="realtime-preview-header">
+                <strong>实时建图预览</strong>
+                <span>{{ realtimeMapPreviewSummary }}</span>
+              </div>
+              <div class="realtime-map-canvas-shell">
+                <div class="realtime-map-stage">
+                  <canvas
+                    ref="mapPreviewCanvasRef"
+                    class="realtime-map-canvas"
+                    aria-label="实时建图预览"
+                  />
+                  <svg
+                    v-if="realtimeMapPreview && (realtimeMapScanPoints.length > 0 || realtimeMapRobotMarker || realtimeMapGoalMarker)"
+                    class="realtime-map-overlay"
+                    :viewBox="`0 0 ${realtimeMapPreview.width} ${realtimeMapPreview.height}`"
+                    preserveAspectRatio="none"
+                  >
+                    <circle
+                      v-for="point in realtimeMapScanPoints"
+                      :key="point.id"
+                      class="scan-point realtime"
+                      :cx="point.x"
+                      :cy="point.y"
+                      r="1.4"
+                    />
+                    <g v-if="realtimeMapGoalMarker">
+                      <circle
+                        class="realtime-map-goal"
+                        :cx="realtimeMapGoalMarker.x"
+                        :cy="realtimeMapGoalMarker.y"
+                        r="6"
+                      />
+                    </g>
+                    <g v-if="realtimeMapRobotMarker">
+                      <line
+                        class="realtime-map-heading"
+                        :x1="realtimeMapRobotMarker.x"
+                        :y1="realtimeMapRobotMarker.y"
+                        :x2="realtimeMapRobotMarker.headingX"
+                        :y2="realtimeMapRobotMarker.headingY"
+                      />
+                      <circle
+                        class="realtime-map-robot"
+                        :cx="realtimeMapRobotMarker.x"
+                        :cy="realtimeMapRobotMarker.y"
+                        r="5.5"
+                      />
+                    </g>
+                  </svg>
+                </div>
+              </div>
+              <p class="realtime-preview-tip">
+                建图预览来自机器狗端 `/map`，通过工作站 WebSocket 实时推送；保存后仍需下载到本地地图仓库用于正式加载。
+              </p>
+            </div>
+
+            <div
+              v-else-if="standaloneLidarPreviewReady"
               class="realtime-preview"
             >
               <div class="realtime-preview-header">
@@ -917,7 +977,7 @@
 
 <script setup lang="ts">
 import { Expand, Fold, RefreshRight } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Map } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -928,6 +988,7 @@ import { useWebSocket } from '@/share/websocket/useWebSocket'
 import { mappingApi } from '../api'
 import type {
   LidarScan,
+  MapPreview,
   MappingCommand,
   MappingRuntime,
   NavigationCommand,
@@ -953,6 +1014,7 @@ const maps = ref<StudioMap[]>([])
 const remoteMaps = ref<RemoteMap[]>([])
 const remoteMapDirectory = ref('')
 const selectedRemoteMapId = ref('')
+const lastDownloadPromptKey = ref('')
 const loadingRemoteMaps = ref(false)
 const downloadingRemoteMap = ref(false)
 const waypointFiles = ref<WaypointFile[]>([])
@@ -973,6 +1035,7 @@ const patrolWaypointFile = ref('')
 const mapImageSize = ref({ width: 0, height: 0 })
 const mapImageBroken = ref(false)
 const mapImageRef = ref<HTMLImageElement | null>(null)
+const mapPreviewCanvasRef = ref<HTMLCanvasElement | null>(null)
 const showDraftGoal = ref(false)
 const pendingGoalAnchor = ref<{ x: number; y: number } | null>(null)
 const runtime = ref<MappingRuntime>({
@@ -983,6 +1046,7 @@ const runtime = ref<MappingRuntime>({
   currentPose: null,
   goalPose: null,
   lidarScan: null,
+  mapPreview: null,
   lastCommand: null,
   lastCommandAt: null,
   commandHistory: [],
@@ -1026,6 +1090,7 @@ const selectedRemoteMap = computed(() => remoteMaps.value.find((item) => item.id
 const canLoadRemoteMaps = computed(() => !!selectedRobotId.value && !!runtime.value.selectedRobot?.serverUrl)
 const selectedWaypointFile = computed(() => waypointFiles.value.find((item) => item.path === patrolWaypointFile.value.trim()) || null)
 const activeMap = computed(() => maps.value.find((item) => item.id === runtime.value.activeMapId) || null)
+const realtimeMapPreview = computed(() => runtime.value.mapPreview)
 const currentPose = computed(() => runtime.value.lidarScan?.pose ?? runtime.value.currentPose)
 const currentPoseStyle = computed(() => buildPoseStyle(currentPose.value, true))
 const remoteMapSaveDir = computed(() => extractStringField(mapRuntimeState.value ?? {}, ['save_dir']))
@@ -1068,7 +1133,20 @@ const draftGoalPoseStyle = computed(() => {
 const goalPoseStyle = computed(() => buildPoseStyle(runtime.value.goalPose, false))
 const lidarScanPoints = computed(() => buildLidarScanPoints(runtime.value.lidarScan, currentPose.value))
 const standaloneLidarPreviewPoints = computed(() => buildStandaloneLidarPreviewPoints(runtime.value.lidarScan))
+const realtimeMapPreviewReady = computed(() => !!runtime.value.mapPreview?.data && runtime.value.mapPreview.width > 0 && runtime.value.mapPreview.height > 0)
+const showRealtimeMapPreview = computed(() => realtimeMapPreviewReady.value && (runtime.value.mappingActive || !selectedMap.value))
+const realtimeMapRobotMarker = computed(() => buildPreviewPoseMarker(currentPose.value))
+const realtimeMapGoalMarker = computed(() => buildPreviewPoseMarker(runtime.value.goalPose, false))
+const realtimeMapScanPoints = computed(() => buildPreviewLidarPoints(runtime.value.lidarScan, currentPose.value))
 const standaloneLidarPreviewReady = computed(() => !selectedMap.value && standaloneLidarPreviewPoints.value.length > 0)
+const realtimeMapPreviewSummary = computed(() => {
+  const preview = runtime.value.mapPreview
+  if (!preview) {
+    return '等待地图数据'
+  }
+  const mapName = preview.mapName || mapNameInput.value.trim() || '未命名地图'
+  return `${mapName} / ${preview.width}x${preview.height} / ${preview.resolution.toFixed(3)}m`
+})
 const standaloneLidarPreviewSummary = computed(() => {
   const scan = runtime.value.lidarScan
   if (!scan) {
@@ -1542,7 +1620,7 @@ async function refreshAll(): Promise<void> {
   }
 }
 
-async function loadRemoteMaps(): Promise<void> {
+async function loadRemoteMaps(showEmptyMessage = true): Promise<void> {
   const robotId = selectedRobotId.value
   if (!robotId) {
     ElMessage.warning('请先选择机器人')
@@ -1557,7 +1635,7 @@ async function loadRemoteMaps(): Promise<void> {
     if (!remoteMaps.value.some((item) => item.id === selectedRemoteMapId.value)) {
       selectedRemoteMapId.value = remoteMaps.value[0]?.id || ''
     }
-    if (remoteMaps.value.length === 0) {
+    if (showEmptyMessage && remoteMaps.value.length === 0) {
       ElMessage.info('真机地图目录暂无可下载地图')
     }
   } catch (error) {
@@ -1575,6 +1653,10 @@ async function downloadSelectedRemoteMap(): Promise<void> {
     return
   }
 
+  await downloadRemoteMap(robotId, map)
+}
+
+async function downloadRemoteMap(robotId: string, map: RemoteMap): Promise<void> {
   downloadingRemoteMap.value = true
   try {
     const response = await mappingApi.downloadRemoteMap(robotId, map.id)
@@ -1594,6 +1676,60 @@ async function downloadSelectedRemoteMap(): Promise<void> {
   } finally {
     downloadingRemoteMap.value = false
   }
+}
+
+async function promptDownloadLatestRemoteMap(data: MappingRuntime): Promise<void> {
+  const robotId = selectedRobotId.value
+  if (!robotId) {
+    return
+  }
+
+  const mapState = data.mapState ?? data.robotSummary?.mapping ?? null
+  const lastMap = extractStringField(mapState ?? {}, ['last_map'])
+  if (!lastMap) {
+    return
+  }
+
+  const promptKey = `${robotId}:${lastMap}`
+  if (lastDownloadPromptKey.value === promptKey) {
+    return
+  }
+  lastDownloadPromptKey.value = promptKey
+
+  await loadRemoteMaps(false)
+  const latestRemoteMap = findRemoteMapByName(lastMap)
+  if (latestRemoteMap) {
+    selectedRemoteMapId.value = latestRemoteMap.id
+  }
+
+  try {
+    await ElMessageBox.confirm(`真机地图「${lastMap}」已保存，是否立即下载到电脑端本地地图仓库？`, '下载真机地图', {
+      confirmButtonText: '立即下载',
+      cancelButtonText: '稍后再说',
+      type: 'info',
+    })
+  } catch {
+    return
+  }
+
+  if (!latestRemoteMap) {
+    ElMessage.warning('尚未在真机地图目录里找到刚保存的地图，请稍后点击“读取真机”再下载')
+    return
+  }
+
+  await downloadRemoteMap(robotId, latestRemoteMap)
+}
+
+function findRemoteMapByName(mapName: string): RemoteMap | null {
+  const normalizedName = mapName.trim().toLowerCase()
+  if (!normalizedName) {
+    return null
+  }
+
+  return remoteMaps.value.find((item) => {
+    const yamlPath = item.yamlPath.replace(/\\/g, '/').toLowerCase()
+    return item.name.trim().toLowerCase() === normalizedName || yamlPath.endsWith(`/${normalizedName}.yaml`) || yamlPath.endsWith(`${normalizedName}.yaml`)
+  }) || null
 }
 
 async function refreshWaypoints(): Promise<void> {
@@ -1756,6 +1892,9 @@ async function sendRuntimeCommand(payload: Parameters<typeof mappingApi.sendComm
       selectedMapId.value = response.data.activeMapId
     }
     ElMessage.success(buildCommandSuccessMessage(payload, response.data, response.message))
+    if (payload.type === 'map' && payload.command === 'stop_mapping') {
+      await promptDownloadLatestRemoteMap(response.data)
+    }
   } catch (error) {
     handleRequestError(error, '命令发送失败')
   }
@@ -1801,6 +1940,66 @@ function handleImageLoad(event: Event): void {
 function handleImageError(): void {
   mapImageBroken.value = true
   mapImageSize.value = { width: 0, height: 0 }
+}
+
+function renderMapPreview(): void {
+  const preview = runtime.value.mapPreview
+  const canvas = mapPreviewCanvasRef.value
+  if (!preview || !canvas || preview.encoding !== 'int8-base64' || preview.width <= 0 || preview.height <= 0) {
+    return
+  }
+
+  const context = canvas.getContext('2d')
+  if (!context) {
+    return
+  }
+
+  const width = Math.trunc(preview.width)
+  const height = Math.trunc(preview.height)
+  canvas.width = width
+  canvas.height = height
+
+  const cells = decodeBase64Bytes(preview.data)
+  if (cells.length < width * height) {
+    return
+  }
+
+  const imageData = context.createImageData(width, height)
+  for (let sourceY = 0; sourceY < height; sourceY += 1) {
+    const targetY = height - sourceY - 1
+    for (let x = 0; x < width; x += 1) {
+      const cell = cells[(sourceY * width) + x]
+      const color = occupancyToGray(cell)
+      const offset = ((targetY * width) + x) * 4
+      imageData.data[offset] = color
+      imageData.data[offset + 1] = color
+      imageData.data[offset + 2] = color
+      imageData.data[offset + 3] = 255
+    }
+  }
+  context.putImageData(imageData, 0, 0)
+}
+
+function decodeBase64Bytes(value: string): Uint8Array {
+  const binary = window.atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+  return bytes
+}
+
+function occupancyToGray(value: number): number {
+  if (value === 255) {
+    return 156
+  }
+  if (value >= 65) {
+    return 24
+  }
+  if (value <= 15) {
+    return 244
+  }
+  return Math.max(36, Math.min(244, 244 - Math.round(value * 2.1)))
 }
 
 function handleMapCanvasClick(event: MouseEvent): void {
@@ -1953,6 +2152,31 @@ function buildCanvasPoint(worldX: number, worldY: number): { x: number; y: numbe
   }
 }
 
+function buildPreviewCanvasPoint(worldX: number, worldY: number): { x: number; y: number } | null {
+  const preview = realtimeMapPreview.value
+  if (!preview || preview.width <= 0 || preview.height <= 0) {
+    return null
+  }
+
+  const xPixels = (worldX - preview.origin[0]) / preview.resolution
+  const yPixels = preview.height - ((worldY - preview.origin[1]) / preview.resolution)
+  if (
+    !Number.isFinite(xPixels)
+    || !Number.isFinite(yPixels)
+    || xPixels < 0
+    || yPixels < 0
+    || xPixels > preview.width
+    || yPixels > preview.height
+  ) {
+    return null
+  }
+
+  return {
+    x: xPixels,
+    y: yPixels,
+  }
+}
+
 function buildPolylinePoints(points: Array<{ x: number; y: number }>): string {
   if (points.length < 2) {
     return ''
@@ -2075,6 +2299,64 @@ function buildLidarScanPoints(scan: LidarScan | null, pose: PlanarPose | null): 
       id: `${scan.capturedAt}-${index}`,
       x: xPixels,
       y: yPixels,
+    })
+  }
+
+  return points
+}
+
+function buildPreviewPoseMarker(
+  pose: PlanarPose | null,
+  withHeading = true,
+): { x: number; y: number; headingX: number; headingY: number } | null {
+  if (!pose) {
+    return null
+  }
+
+  const center = buildPreviewCanvasPoint(pose.position[0], pose.position[1])
+  if (!center) {
+    return null
+  }
+
+  const headingLength = withHeading ? Math.max(10, Math.min(24, 0.5 / Math.max(realtimeMapPreview.value?.resolution || 0.05, 0.01))) : 0
+  return {
+    x: center.x,
+    y: center.y,
+    headingX: center.x + (Math.cos(pose.yaw) * headingLength),
+    headingY: center.y - (Math.sin(pose.yaw) * headingLength),
+  }
+}
+
+function buildPreviewLidarPoints(scan: LidarScan | null, pose: PlanarPose | null): Array<{ id: string; x: number; y: number }> {
+  const preview = realtimeMapPreview.value
+  if (!scan || !pose || !preview || preview.width <= 0 || preview.height <= 0) {
+    return []
+  }
+
+  const cosYaw = Math.cos(pose.yaw)
+  const sinYaw = Math.sin(pose.yaw)
+  const points: Array<{ id: string; x: number; y: number }> = []
+
+  for (let index = 0; index < scan.ranges.length; index += 1) {
+    const distance = scan.ranges[index]
+    if (distance === null || distance < scan.rangeMin || distance > scan.rangeMax) {
+      continue
+    }
+
+    const angle = scan.angleMin + (index * scan.angleIncrement)
+    const localX = distance * Math.cos(angle)
+    const localY = distance * Math.sin(angle)
+    const worldX = pose.position[0] + (localX * cosYaw) - (localY * sinYaw)
+    const worldY = pose.position[1] + (localX * sinYaw) + (localY * cosYaw)
+    const point = buildPreviewCanvasPoint(worldX, worldY)
+    if (!point) {
+      continue
+    }
+
+    points.push({
+      id: `${scan.capturedAt}-${index}`,
+      x: point.x,
+      y: point.y,
     })
   }
 
@@ -2349,10 +2631,11 @@ function setupRealtimeListener(): void {
       data?: {
         robotId?: string
         scan?: LidarScan | null
+        preview?: MapPreview | null
       }
     }
 
-    if (payload.type !== 'mapping.lidar_scan.updated') {
+    if (payload.type !== 'mapping.lidar_scan.updated' && payload.type !== 'mapping.map_preview.updated') {
       return
     }
 
@@ -2361,10 +2644,17 @@ function setupRealtimeListener(): void {
       return
     }
 
-    const scan = payload.data?.scan ?? null
-    runtime.value.lidarScan = scan
-    if (scan?.pose) {
-      runtime.value.currentPose = scan.pose
+    if (payload.type === 'mapping.lidar_scan.updated') {
+      const scan = payload.data?.scan ?? null
+      runtime.value.lidarScan = scan
+      if (scan?.pose) {
+        runtime.value.currentPose = scan.pose
+      }
+      return
+    }
+
+    if (payload.type === 'mapping.map_preview.updated') {
+      runtime.value.mapPreview = payload.data?.preview ?? null
     }
   })
 
@@ -2401,10 +2691,27 @@ watch(selectedMapId, () => {
   }
 })
 
+watch(
+  () => runtime.value.mapPreview,
+  () => {
+    renderMapPreview()
+  },
+  { flush: 'post' },
+)
+
+watch(
+  showRealtimeMapPreview,
+  () => {
+    renderMapPreview()
+  },
+  { flush: 'post' },
+)
+
 watch(selectedRobotId, async () => {
   remoteMaps.value = []
   remoteMapDirectory.value = ''
   selectedRemoteMapId.value = ''
+  lastDownloadPromptKey.value = ''
   await refreshAll()
 })
 
@@ -2844,6 +3151,18 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.18);
 }
 
+.realtime-map-preview {
+  width: min(100%, 920px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+  padding: 28px 20px;
+  border-radius: 24px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92));
+  box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.18);
+}
+
 .realtime-preview-header {
   width: 100%;
   display: flex;
@@ -2856,6 +3175,47 @@ onBeforeUnmount(() => {
 .realtime-preview-header strong {
   font-size: 15px;
   color: #f8fafc;
+}
+
+.realtime-map-canvas-shell {
+  width: 100%;
+  max-height: min(64vh, 720px);
+  overflow: auto;
+  padding: 14px;
+  border-radius: 20px;
+  background:
+    linear-gradient(45deg, rgba(148, 163, 184, 0.10) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(148, 163, 184, 0.10) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.10) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.10) 75%),
+    rgba(15, 23, 42, 0.72);
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.14);
+}
+
+.realtime-map-stage {
+  position: relative;
+  display: inline-block;
+  margin: 0 auto;
+}
+
+.realtime-map-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  image-rendering: pixelated;
+  border-radius: 12px;
+  box-shadow: 0 18px 42px rgba(2, 6, 23, 0.45);
+}
+
+.realtime-map-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .realtime-preview-canvas {
@@ -2894,6 +3254,28 @@ onBeforeUnmount(() => {
 
 .scan-point {
   fill: rgba(34, 197, 94, 0.9);
+}
+
+.scan-point.realtime {
+  fill: rgba(34, 197, 94, 0.78);
+}
+
+.realtime-map-robot {
+  fill: #f97316;
+  stroke: rgba(255, 237, 213, 0.8);
+  stroke-width: 1.6;
+}
+
+.realtime-map-goal {
+  fill: rgba(37, 99, 235, 0.9);
+  stroke: rgba(219, 234, 254, 0.92);
+  stroke-width: 1.6;
+}
+
+.realtime-map-heading {
+  stroke: rgba(251, 146, 60, 0.96);
+  stroke-width: 2.2;
+  stroke-linecap: round;
 }
 
 .navigation-route-line {

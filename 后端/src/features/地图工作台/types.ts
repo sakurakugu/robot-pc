@@ -118,6 +118,20 @@ export interface 激光扫描数据 {
   pose: 平面位姿 | null
 }
 
+export interface 建图预览数据 {
+  available: boolean
+  frameId: string
+  mapName: string
+  resolution: number
+  width: number
+  height: number
+  origin: [number, number, number]
+  encoding: 'int8-base64'
+  data: string
+  capturedAt: number
+  sequence: number
+}
+
 export interface 地图命令记录 {
   channel: 运行时命令通道
   command: 运行时命令类型
@@ -224,6 +238,7 @@ export interface 地图运行状态 {
   currentPose: 平面位姿 | null
   goalPose: 平面位姿 | null
   lidarScan: 激光扫描数据 | null
+  mapPreview: 建图预览数据 | null
   lastCommand: 运行时命令类型 | null
   lastCommandAt: string | null
   commandHistory: 地图命令记录[]

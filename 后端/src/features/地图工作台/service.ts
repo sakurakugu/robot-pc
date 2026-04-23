@@ -22,6 +22,7 @@ import type {
   地图下载结果,
   导航目标,
   工作台命令请求,
+  建图预览数据,
   运行时命令通道,
   运行时命令类型,
   平面位姿,
@@ -59,6 +60,7 @@ interface 机器人运行态缓存 {
   lastNavigationResponse: Record<string, unknown> | null
   lastPatrolResponse: Record<string, unknown> | null
   lidarScan: 激光扫描数据 | null
+  mapPreview: 建图预览数据 | null
   lastUpdatedAt: string | null
 }
 
@@ -95,6 +97,7 @@ export class 地图工作台服务 {
       currentPose: null,
       goalPose: null,
       lidarScan: null,
+      mapPreview: null,
       lastCommand: null,
       lastCommandAt: null,
       commandHistory: [],
@@ -380,6 +383,23 @@ export class 地图工作台服务 {
           data: {
             robotId,
             scan: 复制激光扫描(lidarScan),
+          },
+        })
+      }
+    }
+
+    if (message.type === 'map_preview' && 是对象(message.data)) {
+      const mapPreview = 解析建图预览(message.data)
+      缓存.mapPreview = mapPreview
+      缓存.lastUpdatedAt = new Date().toISOString()
+      if (mapPreview) {
+        this.广播?.({
+          type: 'mapping.map_preview.updated',
+          robotId,
+          timestamp: Date.now(),
+          data: {
+            robotId,
+            preview: 复制建图预览(mapPreview),
           },
         })
       }
@@ -802,6 +822,7 @@ export class 地图工作台服务 {
       currentPose: 深复制数据(this.运行状态.currentPose),
       goalPose: 深复制数据(this.运行状态.goalPose),
       lidarScan: 深复制数据(this.运行状态.lidarScan),
+      mapPreview: 深复制数据(this.运行状态.mapPreview),
       telemetrySource: 'stub',
       commandSource: 'stub',
       selectedRobot: null,
@@ -876,6 +897,7 @@ export class 地图工作台服务 {
         currentPose: 当前位姿,
         goalPose: 目标位姿,
         lidarScan: null,
+        mapPreview: null,
         telemetrySource: 'robot',
         commandSource: wsConnected ? 'robot_ws' : 'pending_robot',
         selectedRobot: 机器人信息,
@@ -897,6 +919,7 @@ export class 地图工作台服务 {
         telemetrySource: 'stub',
         commandSource: wsConnected ? 'robot_ws' : 'pending_robot',
         lidarScan: null,
+        mapPreview: null,
         selectedRobot: 机器人信息,
       }
     }
@@ -938,6 +961,7 @@ export class 地图工作台服务 {
       currentPose: 当前位姿,
       goalPose: 目标位姿,
       lidarScan: 缓存.lidarScan ? 复制激光扫描(缓存.lidarScan) : null,
+      mapPreview: 缓存.mapPreview ? 复制建图预览(缓存.mapPreview) : null,
       telemetrySource: 'robot',
       commandSource: 'robot_ws',
       selectedRobot: 机器人信息,
@@ -1221,6 +1245,7 @@ function 创建空机器人运行态缓存(): 机器人运行态缓存 {
     lastNavigationResponse: null,
     lastPatrolResponse: null,
     lidarScan: null,
+    mapPreview: null,
     lastUpdatedAt: null,
   }
 }
@@ -1254,6 +1279,9 @@ function 可用类型列表(缓存: 机器人运行态缓存): string[] {
   if (缓存.lidarScan) {
     types.push('lidar_scan')
   }
+  if (缓存.mapPreview) {
+    types.push('map_preview')
+  }
   return types
 }
 
@@ -1262,6 +1290,13 @@ function 复制激光扫描(scan: 激光扫描数据): 激光扫描数据 {
     ...scan,
     ranges: [...scan.ranges],
     pose: scan.pose ? { ...scan.pose } : null,
+  }
+}
+
+function 复制建图预览(preview: 建图预览数据): 建图预览数据 {
+  return {
+    ...preview,
+    origin: [...preview.origin],
   }
 }
 
@@ -1298,6 +1333,37 @@ function 解析激光扫描(value: Record<string, unknown>): 激光扫描数据 
     pointCount: pointCount ?? ranges.filter((item) => item !== null).length,
     capturedAt: Math.trunc(capturedAt),
     pose,
+  }
+}
+
+function 解析建图预览(value: Record<string, unknown>): 建图预览数据 | null {
+  if (读取布尔值(value, 'available') !== true) {
+    return null
+  }
+
+  const resolution = 读取数值(value, 'resolution')
+  const width = 读取数值(value, 'width')
+  const height = 读取数值(value, 'height')
+  const capturedAt = 读取数值(value, 'captured_at')
+  const sequence = 读取数值(value, 'sequence') ?? capturedAt
+  const data = 读取字符串(value, 'data')
+  if (resolution === null || width === null || height === null || capturedAt === null || sequence === null || !data) {
+    return null
+  }
+
+  const origin = 读取三元数值数组(value.origin) ?? [0, 0, 0]
+  return {
+    available: true,
+    frameId: 读取字符串(value, 'frame_id') ?? 'map',
+    mapName: 读取字符串(value, 'map_name') ?? '',
+    resolution,
+    width: Math.trunc(width),
+    height: Math.trunc(height),
+    origin,
+    encoding: 'int8-base64',
+    data,
+    capturedAt: Math.trunc(capturedAt),
+    sequence: Math.trunc(sequence),
   }
 }
 
