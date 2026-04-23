@@ -40,6 +40,29 @@ export interface 地图元数据 {
   updatedAt: string
 }
 
+export interface 远程地图元数据 {
+  id: string
+  name: string
+  yamlPath: string
+  imagePath: string
+  imageFormat: string
+  updatedAt: string
+}
+
+export interface 远程地图列表 {
+  robotId: string
+  serverUrl: string
+  mapDirectory: string
+  maps: 远程地图元数据[]
+}
+
+export interface 地图下载结果 {
+  robotId: string
+  mapId: string
+  importedMapCount: number
+  importedMaps: 地图元数据[]
+}
+
 export interface 巡逻文件元数据 {
   id: string
   name: string

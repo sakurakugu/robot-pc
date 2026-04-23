@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
+import extractZip from 'extract-zip'
 import { PNG } from 'pngjs'
 import { v7 as uuidv7 } from 'uuid'
 import { logger } from '../../infra/logger'
@@ -17,6 +19,7 @@ import type {
   地图命令类型,
   地图命令记录,
   地图运行状态,
+  地图下载结果,
   导航目标,
   工作台命令请求,
   运行时命令通道,
@@ -24,6 +27,8 @@ import type {
   平面位姿,
   激光扫描数据,
   机器人摘要信息,
+  远程地图列表,
+  远程地图元数据,
   运行时任务信息,
   运行时地图信息,
   运行时导航信息,
@@ -119,6 +124,53 @@ export class 地图工作台服务 {
     有效地图列表.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     this.同步运行状态地图数量(有效地图列表)
     return 有效地图列表
+  }
+
+  async 获取机器人地图列表(robotId: string): Promise<远程地图列表> {
+    const 机器人 = await this.读取可访问机器人(robotId)
+    const serverUrl = 规范化机器人服务地址(机器人)
+    if (!serverUrl) {
+      throw Http错误工厂.参数错误('未配置 robot-server 地址', 'ROBOT_SERVER_URL_REQUIRED')
+    }
+
+    return 拉取机器人地图列表(robotId, serverUrl)
+  }
+
+  async 下载机器人地图(robotId: string, mapId: string): Promise<地图下载结果> {
+    const 机器人 = await this.读取可访问机器人(robotId)
+    const serverUrl = 规范化机器人服务地址(机器人)
+    if (!serverUrl) {
+      throw Http错误工厂.参数错误('未配置 robot-server 地址', 'ROBOT_SERVER_URL_REQUIRED')
+    }
+
+    const normalizedMapId = mapId.trim()
+    if (!normalizedMapId) {
+      throw Http错误工厂.参数错误('远程地图 ID 不能为空', 'REMOTE_MAP_ID_REQUIRED')
+    }
+
+    await fs.mkdir(this.地图目录, { recursive: true })
+    const 临时根目录 = await fs.mkdtemp(path.join(os.tmpdir(), 'robot-map-download-'))
+    const zipPath = path.join(临时根目录, 'map.zip')
+    const 解压目录 = path.join(临时根目录, 'extract')
+
+    try {
+      const zipBuffer = await 下载机器人地图压缩包(serverUrl, normalizedMapId)
+      await fs.writeFile(zipPath, zipBuffer)
+      await fs.mkdir(解压目录, { recursive: true })
+      await extractZip(zipPath, { dir: 解压目录 })
+      const 已复制Yaml相对路径 = await 复制目录内容到目标(解压目录, this.地图目录)
+
+      const 地图列表 = await this.获取地图列表()
+      const importedMaps = 地图列表.filter((item) => 已复制Yaml相对路径.has(path.relative(this.地图目录, item.yamlPath).replace(/\\/g, '/')))
+      return {
+        robotId,
+        mapId: normalizedMapId,
+        importedMapCount: importedMaps.length,
+        importedMaps,
+      }
+    } finally {
+      await fs.rm(临时根目录, { recursive: true, force: true })
+    }
   }
 
   async 获取运行状态(robotId?: string): Promise<地图运行状态> {
@@ -377,6 +429,19 @@ export class 地图工作台服务 {
       return null
     }
     return 地图列表.find((item) => item.id === activeMapId) ?? null
+  }
+
+  private async 读取可访问机器人(robotId: string): Promise<RobotRecord> {
+    const normalizedRobotId = robotId.trim()
+    if (!normalizedRobotId) {
+      throw Http错误工厂.参数错误('机器人 ID 不能为空', 'ROBOT_ID_REQUIRED')
+    }
+
+    const 机器人 = await this.机器人仓库.getRobot(normalizedRobotId)
+    if (!机器人) {
+      throw Http错误工厂.未找到('未找到指定机器人', 'ROBOT_NOT_FOUND')
+    }
+    return 机器人
   }
 
   private 解析请求目标地图(请求: 工作台命令请求, 地图列表: 地图元数据[]): 地图元数据 | null {
@@ -991,6 +1056,158 @@ async function 拉取机器人完整遥测(serverUrl: string): Promise<Record<st
   } finally {
     clearTimeout(timeout)
   }
+}
+
+async function 拉取机器人地图列表(robotId: string, serverUrl: string): Promise<远程地图列表> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => {
+    controller.abort()
+  }, 5000)
+
+  try {
+    const response = await fetch(`${serverUrl.replace(/\/$/, '')}/api/v1/maps`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`robot-server 地图接口响应失败 (${response.status})`)
+    }
+
+    const payload = await response.json() as { success?: boolean; data?: unknown; error?: string }
+    if (!payload.success || !payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) {
+      throw new Error(payload.error || 'robot-server 返回了无效地图列表')
+    }
+
+    const data = payload.data as Record<string, unknown>
+    const maps = Array.isArray(data.maps)
+      ? data.maps.map(解析远程地图元数据).filter((item): item is 远程地图元数据 => item !== null)
+      : []
+
+    return {
+      robotId,
+      serverUrl,
+      mapDirectory: typeof data.map_dir === 'string' ? data.map_dir : '',
+      maps,
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('读取 robot-server 地图列表超时')
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function 下载机器人地图压缩包(serverUrl: string, mapId: string): Promise<Buffer> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => {
+    controller.abort()
+  }, 15000)
+
+  try {
+    const response = await fetch(`${serverUrl.replace(/\/$/, '')}/api/v1/maps/${编码路径参数(mapId)}/download`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/zip',
+      },
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`robot-server 地图下载失败 (${response.status})`)
+    }
+
+    const arrayBuffer = await response.arrayBuffer()
+    return Buffer.from(arrayBuffer)
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('下载 robot-server 地图超时')
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function 解析远程地图元数据(value: unknown): 远程地图元数据 | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+
+  const data = value as Record<string, unknown>
+  const id = 读取字符串(data, 'id')
+  const name = 读取字符串(data, 'name')
+  if (!id || !name) {
+    return null
+  }
+
+  return {
+    id,
+    name,
+    yamlPath: 读取首个字符串([读取字符串(data, 'yaml_path'), 读取字符串(data, 'yamlPath')]) ?? '',
+    imagePath: 读取首个字符串([读取字符串(data, 'image_path'), 读取字符串(data, 'imagePath')]) ?? '',
+    imageFormat: 读取首个字符串([读取字符串(data, 'image_format'), 读取字符串(data, 'imageFormat')]) ?? 'unknown',
+    updatedAt: 读取首个字符串([读取字符串(data, 'updated_at'), 读取字符串(data, 'updatedAt')]) ?? '',
+  }
+}
+
+function 编码路径参数(value: string): string {
+  return value.split('/').map((part) => encodeURIComponent(part)).join('/')
+}
+
+async function 复制目录内容到目标(sourceDir: string, targetDir: string): Promise<Set<string>> {
+  const copiedYamlRelativePaths = new Set<string>()
+  const sourceRoot = path.resolve(sourceDir)
+  const targetRoot = path.resolve(targetDir)
+  const files = await 递归收集文件(sourceRoot)
+
+  for (const filePath of files) {
+    const relativePath = path.relative(sourceRoot, filePath)
+    if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+      continue
+    }
+
+    const targetPath = path.resolve(targetRoot, relativePath)
+    if (!路径在目录内(targetPath, targetRoot)) {
+      continue
+    }
+
+    await fs.mkdir(path.dirname(targetPath), { recursive: true })
+    await fs.copyFile(filePath, targetPath)
+    if (path.extname(targetPath).toLowerCase() === '.yaml') {
+      copiedYamlRelativePaths.add(path.relative(targetRoot, targetPath).replace(/\\/g, '/'))
+    }
+  }
+
+  if (copiedYamlRelativePaths.size === 0) {
+    throw Http错误工厂.参数错误('地图压缩包中未找到 yaml 文件', 'REMOTE_MAP_ARCHIVE_INVALID')
+  }
+
+  return copiedYamlRelativePaths
+}
+
+async function 递归收集文件(dir: string): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true })
+  const result: string[] = []
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      result.push(...await 递归收集文件(fullPath))
+    } else if (entry.isFile()) {
+      result.push(fullPath)
+    }
+  }
+  return result
+}
+
+function 路径在目录内(targetPath: string, rootDir: string): boolean {
+  const relativePath = path.relative(rootDir, targetPath)
+  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
 }
 
 function 创建空机器人运行态缓存(): 机器人运行态缓存 {

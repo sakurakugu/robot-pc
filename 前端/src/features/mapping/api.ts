@@ -1,11 +1,31 @@
 import { http } from '@/share/api/http'
-import type { MappingRequest, MappingRuntime, StudioMap, WaypointFile, WaypointFileDetail } from './types'
+import type {
+  MapDownloadResult,
+  MappingRequest,
+  MappingRuntime,
+  RemoteMapList,
+  StudioMap,
+  WaypointFile,
+  WaypointFileDetail,
+} from './types'
 
 const BASE_URL = '/api/v1/mapping'
 
 export const mappingApi = {
   getMaps(): Promise<{ success: boolean; data: { maps: StudioMap[] } }> {
     return http.get(`${BASE_URL}/maps`)
+  },
+
+  getRemoteMaps(robotId: string): Promise<{ success: boolean; data: RemoteMapList }> {
+    return http.get(`${BASE_URL}/remote-maps`, {
+      params: { robotId },
+    })
+  },
+
+  downloadRemoteMap(robotId: string, mapId: string): Promise<{ success: boolean; data: MapDownloadResult; message: string }> {
+    return http.post(`${BASE_URL}/remote-maps/${encodeURIComponent(mapId)}/download`, undefined, {
+      params: { robotId },
+    })
   },
 
   getWaypoints(): Promise<{ success: boolean; data: { waypoints: WaypointFile[] } }> {

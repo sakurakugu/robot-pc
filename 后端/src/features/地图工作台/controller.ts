@@ -12,6 +12,19 @@ export class 地图工作台控制器 {
     return 返回数据({ maps })
   })
 
+  获取机器人地图列表 = 处理控制器(async (req) => {
+    const maps = await this.服务.获取机器人地图列表(this.读取机器人ID必填(req))
+    return 返回数据(maps)
+  })
+
+  下载机器人地图 = 处理控制器(async (req) => {
+    const result = await this.服务.下载机器人地图(
+      this.读取机器人ID必填(req),
+      this.读取路径参数(req.params.mapId, '远程地图 ID'),
+    )
+    return 返回数据(result, { 消息: '地图已下载到本地仓库' })
+  })
+
   获取巡逻文件列表 = 处理控制器(async () => {
     const waypoints = await this.服务.获取巡逻文件列表()
     return 返回数据({ waypoints })
@@ -68,6 +81,14 @@ export class 地图工作台控制器 {
     const rawRobotId = req.query.robotId
     const robotId = Array.isArray(rawRobotId) ? rawRobotId[0] : rawRobotId
     return typeof robotId === 'string' && robotId.trim().length > 0 ? robotId.trim() : undefined
+  }
+
+  private 读取机器人ID必填(req: Request): string {
+    const robotId = this.读取机器人ID(req)
+    if (!robotId) {
+      throw Http错误工厂.参数错误('机器人 ID 不能为空', 'ROBOT_ID_REQUIRED')
+    }
+    return robotId
   }
 
   private 读取路径参数(rawValue: string | string[] | undefined, 字段标签: string): string {

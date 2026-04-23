@@ -23,6 +23,29 @@ export interface StudioMap {
   updatedAt: string
 }
 
+export interface RemoteMap {
+  id: string
+  name: string
+  yamlPath: string
+  imagePath: string
+  imageFormat: string
+  updatedAt: string
+}
+
+export interface RemoteMapList {
+  robotId: string
+  serverUrl: string
+  mapDirectory: string
+  maps: RemoteMap[]
+}
+
+export interface MapDownloadResult {
+  robotId: string
+  mapId: string
+  importedMapCount: number
+  importedMaps: StudioMap[]
+}
+
 export interface WaypointFile {
   id: string
   name: string

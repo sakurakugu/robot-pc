@@ -103,6 +103,57 @@
           </el-alert>
 
           <div
+            v-if="runtime.selectedRobot"
+            class="remote-map-sync"
+          >
+            <div class="remote-map-sync-header">
+              <div>
+                <strong>真机地图下载</strong>
+                <p>{{ remoteMapDirectory || remoteMapSaveDir || '读取真机地图目录后显示' }}</p>
+              </div>
+              <el-button
+                size="small"
+                :loading="loadingRemoteMaps"
+                :disabled="!canLoadRemoteMaps"
+                @click="loadRemoteMaps"
+              >
+                读取真机
+              </el-button>
+            </div>
+            <div class="remote-map-sync-actions">
+              <el-select
+                v-model="selectedRemoteMapId"
+                class="remote-map-select"
+                clearable
+                filterable
+                placeholder="选择真机地图"
+                :disabled="remoteMaps.length === 0"
+              >
+                <el-option
+                  v-for="item in remoteMaps"
+                  :key="item.id"
+                  :label="`${item.name} / ${item.imageFormat.toUpperCase()}`"
+                  :value="item.id"
+                >
+                  <div class="remote-map-option">
+                    <span>{{ item.name }}</span>
+                    <small>{{ item.yamlPath }}</small>
+                  </div>
+                </el-option>
+              </el-select>
+              <el-button
+                type="primary"
+                plain
+                :loading="downloadingRemoteMap"
+                :disabled="!selectedRemoteMap"
+                @click="downloadSelectedRemoteMap"
+              >
+                下载到本地
+              </el-button>
+            </div>
+          </div>
+
+          <div
             v-if="maps.length === 0"
             class="empty-state"
           >
@@ -883,6 +934,7 @@ import type {
   NavigationGoal,
   PatrolCommand,
   PlanarPose,
+  RemoteMap,
   RuntimeCommand,
   RuntimeDogBridgeData,
   RuntimeLidarData,
@@ -898,6 +950,11 @@ const openingWaypointDirectory = ref(false)
 const loadingWaypoints = ref(false)
 const loadingWaypointDetail = ref(false)
 const maps = ref<StudioMap[]>([])
+const remoteMaps = ref<RemoteMap[]>([])
+const remoteMapDirectory = ref('')
+const selectedRemoteMapId = ref('')
+const loadingRemoteMaps = ref(false)
+const downloadingRemoteMap = ref(false)
 const waypointFiles = ref<WaypointFile[]>([])
 const waypointFileDetail = ref<WaypointFileDetail | null>(null)
 const robots = ref<Robot[]>([])
@@ -965,6 +1022,8 @@ const STANDALONE_LIDAR_PREVIEW_HALF = STANDALONE_LIDAR_PREVIEW_SIZE / 2
 
 const canSendCommand = computed(() => runtime.value.commandSource === 'stub' || runtime.value.commandSource === 'robot_ws')
 const selectedMap = computed(() => maps.value.find((item) => item.id === selectedMapId.value) || null)
+const selectedRemoteMap = computed(() => remoteMaps.value.find((item) => item.id === selectedRemoteMapId.value) || null)
+const canLoadRemoteMaps = computed(() => !!selectedRobotId.value && !!runtime.value.selectedRobot?.serverUrl)
 const selectedWaypointFile = computed(() => waypointFiles.value.find((item) => item.path === patrolWaypointFile.value.trim()) || null)
 const activeMap = computed(() => maps.value.find((item) => item.id === runtime.value.activeMapId) || null)
 const currentPose = computed(() => runtime.value.lidarScan?.pose ?? runtime.value.currentPose)
@@ -1480,6 +1539,60 @@ async function refreshAll(): Promise<void> {
     handleRequestError(error, '刷新地图工作台失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadRemoteMaps(): Promise<void> {
+  const robotId = selectedRobotId.value
+  if (!robotId) {
+    ElMessage.warning('请先选择机器人')
+    return
+  }
+
+  loadingRemoteMaps.value = true
+  try {
+    const response = await mappingApi.getRemoteMaps(robotId)
+    remoteMaps.value = response.data.maps
+    remoteMapDirectory.value = response.data.mapDirectory
+    if (!remoteMaps.value.some((item) => item.id === selectedRemoteMapId.value)) {
+      selectedRemoteMapId.value = remoteMaps.value[0]?.id || ''
+    }
+    if (remoteMaps.value.length === 0) {
+      ElMessage.info('真机地图目录暂无可下载地图')
+    }
+  } catch (error) {
+    handleRequestError(error, '读取真机地图失败')
+  } finally {
+    loadingRemoteMaps.value = false
+  }
+}
+
+async function downloadSelectedRemoteMap(): Promise<void> {
+  const robotId = selectedRobotId.value
+  const map = selectedRemoteMap.value
+  if (!robotId || !map) {
+    ElMessage.warning('请先选择真机地图')
+    return
+  }
+
+  downloadingRemoteMap.value = true
+  try {
+    const response = await mappingApi.downloadRemoteMap(robotId, map.id)
+    const [mapsResponse, runtimeResponse] = await Promise.all([
+      mappingApi.getMaps(),
+      mappingApi.getRuntime(robotId),
+    ])
+    maps.value = mapsResponse.data.maps
+    runtime.value = runtimeResponse.data
+    const importedMap = response.data.importedMaps[0] ?? maps.value.find((item) => item.name === map.name)
+    if (importedMap) {
+      selectedMapId.value = importedMap.id
+    }
+    ElMessage.success(response.message || `已下载地图 ${map.name}`)
+  } catch (error) {
+    handleRequestError(error, '下载真机地图失败')
+  } finally {
+    downloadingRemoteMap.value = false
   }
 }
 
@@ -2289,6 +2402,9 @@ watch(selectedMapId, () => {
 })
 
 watch(selectedRobotId, async () => {
+  remoteMaps.value = []
+  remoteMapDirectory.value = ''
+  selectedRemoteMapId.value = ''
   await refreshAll()
 })
 
@@ -2537,6 +2653,55 @@ onBeforeUnmount(() => {
 .map-source-alert {
   margin-bottom: 16px;
   flex-shrink: 0;
+}
+
+.remote-map-sync {
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--studio-border);
+  border-radius: 16px;
+  background: var(--studio-card-background);
+  flex-shrink: 0;
+}
+
+.remote-map-sync-header,
+.remote-map-sync-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.remote-map-sync-header strong {
+  display: block;
+  font-size: 14px;
+}
+
+.remote-map-sync-header p {
+  margin: 6px 0 0;
+  color: var(--studio-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.remote-map-sync-actions {
+  margin-top: 12px;
+  align-items: center;
+}
+
+.remote-map-select {
+  flex: 1;
+}
+
+.remote-map-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.remote-map-option small {
+  color: var(--studio-text-muted);
 }
 
 .viewer-panel {

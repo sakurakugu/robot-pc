@@ -4,6 +4,8 @@ import type { 地图工作台控制器 } from './controller'
 export function createMappingRoutes(controller: 地图工作台控制器): Router {
   const router = Router()
   router.get('/maps', controller.获取地图列表)
+  router.get('/remote-maps', controller.获取机器人地图列表)
+  router.post('/remote-maps/:mapId/download', controller.下载机器人地图)
   router.get('/waypoints', controller.获取巡逻文件列表)
   router.get('/waypoints/:waypointId', controller.获取巡逻文件详情)
   router.get('/runtime', controller.获取运行状态)
