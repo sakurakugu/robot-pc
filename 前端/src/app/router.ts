@@ -2,8 +2,10 @@ import type { RouteRecordRaw } from 'vue-router'
 import { createRouter, createWebHistory } from 'vue-router'
 import { accountRoutes } from '@/features/account/router'
 import { choreoRoutes } from '@/features/choreo/router'
+import { developerRoutes } from '@/features/developer/router'
 import { mappingRoutes } from '@/features/mapping/router'
 import { robotRoutes } from '@/features/robot/router'
+import { useAppSettings } from './composables/useAppSettings'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -31,6 +33,7 @@ const routes: RouteRecordRaw[] = [
       ...accountRoutes,
       ...robotRoutes,
       ...mappingRoutes,
+      ...developerRoutes,
     ],
   },
   ...choreoRoutes,
@@ -43,4 +46,17 @@ const routes: RouteRecordRaw[] = [
 export const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+router.beforeEach((to) => {
+  if (!to.meta.requiresDeveloperSettings) {
+    return true
+  }
+
+  const { developerSettingsEnabled } = useAppSettings()
+  if (developerSettingsEnabled.value) {
+    return true
+  }
+
+  return '/settings'
 })

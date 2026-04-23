@@ -7,6 +7,24 @@
     >
       <template #extra>
         <div class="header-actions">
+          <el-button-group class="panel-toggles">
+            <el-button
+              :type="showMapsPanel ? 'primary' : ''"
+              size="small"
+              title="左侧地图仓库"
+              @click="showMapsPanel = !showMapsPanel"
+            >
+              <el-icon><Fold /></el-icon>
+            </el-button>
+            <el-button
+              :type="showRuntimePanel ? 'primary' : ''"
+              size="small"
+              title="右侧运行与命令"
+              @click="showRuntimePanel = !showRuntimePanel"
+            >
+              <el-icon><Expand /></el-icon>
+            </el-button>
+          </el-button-group>
           <el-select
             v-model="selectedRobotId"
             class="robot-select"
@@ -38,8 +56,17 @@
       </template>
     </PageHeader>
 
-    <div class="workbench-grid">
-      <aside class="panel maps-panel">
+    <div
+      class="workbench-grid"
+      :class="{
+        'is-maps-collapsed': !showMapsPanel,
+        'is-runtime-collapsed': !showRuntimePanel,
+      }"
+    >
+      <aside
+        v-show="showMapsPanel"
+        class="panel maps-panel"
+      >
         <div class="panel-surface">
           <div class="panel-header">
             <div>
@@ -344,7 +371,10 @@
         </div>
       </main>
 
-      <aside class="panel runtime-panel">
+      <aside
+        v-show="showRuntimePanel"
+        class="panel runtime-panel"
+      >
         <div class="panel-surface">
           <div class="runtime-panel-scroll">
             <div class="panel-header">
@@ -835,7 +865,7 @@
 </template>
 
 <script setup lang="ts">
-import { RefreshRight } from '@element-plus/icons-vue'
+import { Expand, Fold, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { Map } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -872,6 +902,8 @@ const waypointFiles = ref<WaypointFile[]>([])
 const waypointFileDetail = ref<WaypointFileDetail | null>(null)
 const robots = ref<Robot[]>([])
 const selectedRobotId = ref('')
+const showMapsPanel = ref(true)
+const showRuntimePanel = ref(true)
 const selectedMapId = ref<string>('')
 const mapNameInput = ref('')
 const navGoalX = ref(0)
@@ -2314,6 +2346,10 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.panel-toggles {
+  margin-right: 4px;
+}
+
 .robot-select {
   width: 280px;
 }
@@ -2329,20 +2365,49 @@ onBeforeUnmount(() => {
 }
 
 .workbench-grid {
+  --maps-drawer-width: clamp(280px, 20vw, 320px);
+  --runtime-drawer-width: clamp(360px, 26vw, 420px);
+
   display: grid;
   flex: 1;
-  grid-template-columns: 320px minmax(0, 1fr) 420px;
+  grid-template-areas: "maps viewer runtime";
+  grid-template-columns: var(--maps-drawer-width) minmax(620px, 1fr) var(--runtime-drawer-width);
   grid-template-rows: minmax(0, 1fr);
   grid-auto-rows: minmax(0, 1fr);
   gap: 18px;
   margin-top: 18px;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto hidden;
+  scrollbar-gutter: stable;
+}
+
+.workbench-grid.is-maps-collapsed {
+  grid-template-areas: "viewer viewer runtime";
+}
+
+.workbench-grid.is-runtime-collapsed {
+  grid-template-areas: "maps viewer viewer";
+}
+
+.workbench-grid.is-maps-collapsed.is-runtime-collapsed {
+  grid-template-areas: "viewer viewer viewer";
 }
 
 .panel {
   min-height: 0;
   overflow: hidden;
+}
+
+.maps-panel {
+  grid-area: maps;
+}
+
+.viewer-panel {
+  grid-area: viewer;
+}
+
+.runtime-panel {
+  grid-area: runtime;
 }
 
 .panel-surface {
@@ -2480,8 +2545,24 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
+.maps-panel,
+.runtime-panel {
+  position: sticky;
+  z-index: 2;
+}
+
+.maps-panel {
+  left: 0;
+}
+
+.runtime-panel {
+  right: 0;
+}
+
 .canvas-legend {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 14px;
   color: var(--studio-text-secondary);
   font-size: 13px;
@@ -3037,23 +3118,20 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1480px) {
   .workbench-grid {
-    grid-template-columns: 280px minmax(0, 1fr);
-  }
-
-  .runtime-panel {
-    grid-column: 1 / -1;
+    --maps-drawer-width: 280px;
+    --runtime-drawer-width: 380px;
+    grid-template-columns: var(--maps-drawer-width) minmax(620px, 1fr) var(--runtime-drawer-width);
   }
 }
 
 @media (max-width: 980px) {
   .mapping-workbench {
-    height: auto;
-    min-height: 100%;
+    height: 100%;
+    min-height: 0;
     padding: 16px;
-    overflow: visible;
+    overflow: hidden;
   }
 
-  .workbench-grid,
   .command-grid,
   .overview-grid,
   .form-grid--goal,
@@ -3065,24 +3143,22 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
-  .workbench-grid {
-    flex: none;
-    grid-template-rows: none;
-    grid-auto-rows: auto;
-    min-height: auto;
-    overflow: visible;
+  .header-actions {
+    flex-wrap: wrap;
+    align-items: stretch;
   }
 
-  .panel,
-  .runtime-panel,
-  .viewer-panel,
-  .panel-surface,
-  .map-list,
-  .runtime-panel-scroll,
-  .map-canvas-scroll,
-  .empty-state,
-  .viewer-empty {
-    overflow: visible;
+  .workbench-grid {
+    --maps-drawer-width: 260px;
+    --runtime-drawer-width: 340px;
+    flex: 1;
+    grid-template-columns: var(--maps-drawer-width) minmax(520px, 1fr) var(--runtime-drawer-width);
+    grid-template-rows: minmax(0, 1fr);
+    grid-auto-rows: minmax(0, 1fr);
+    gap: 12px;
+    min-height: 0;
+    padding-bottom: 8px;
+    overflow: auto hidden;
   }
 
   .panel-actions {

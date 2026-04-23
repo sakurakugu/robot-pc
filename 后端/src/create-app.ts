@@ -10,6 +10,7 @@ import { 机器人控制器 } from './features/机器人管理/controller'
 import { 本地机器人仓库 } from './features/机器人管理/repository'
 import { createRobotRoutes } from './features/机器人管理/routes'
 import { createStudioConfigRoutes } from './features/设置/routes'
+import { createDeveloperRoutes } from './features/开发者工具/routes'
 import 配置 from './infra/config'
 import { StudioWebSocketHost } from './infra/websocket/studio-ws-host'
 import { logger } from './infra/logger'
@@ -94,6 +95,7 @@ export async function createApp(): Promise<StudioAppContext> {
   app.use('/api/v1/config', createStudioConfigRoutes())
   app.use('/api/v1/choreo', createChoreoRoutes(choreoController))
   app.use('/api/v1/mapping', createMappingRoutes(mappingController))
+  app.use('/api/v1/developer', createDeveloperRoutes())
 
   app.get('/api/v1/health', (_req, res) => {
     res.json({

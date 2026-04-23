@@ -86,8 +86,9 @@
 
 <script setup lang="ts">
 import ThemeToggle from '@/app/components/ThemeToggle.vue'
+import { useAppSettings } from '@/app/composables/useAppSettings'
 import { useCloudAccountStore } from '@/features/account/store'
-import { Connection, Expand, Fold, HomeFilled, LocationInformation, Setting, UserFilled, VideoPlay } from '@element-plus/icons-vue'
+import { Connection, Expand, Fold, HomeFilled, LocationInformation, Setting, Tools, UserFilled, VideoPlay } from '@element-plus/icons-vue'
 import { Bot } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -103,6 +104,7 @@ type MenuItem = {
 const route = useRoute()
 const router = useRouter()
 const accountStore = useCloudAccountStore()
+const { developerSettingsEnabled } = useAppSettings()
 
 const asideMode = ref<AsideMode>('expanded')
 const autoCompact = ref(false)
@@ -112,14 +114,22 @@ const asideHiddenWidth = 0
 const collapseRatio = 0.2
 const expandRatio = 0.18
 
-const menuItems: MenuItem[] = [
-  { key: '/', label: '首页', icon: HomeFilled },
-  { key: '/robots', label: '机器人管理', icon: Connection },
-  { key: '/mapping', label: '地图工作台', icon: LocationInformation },
-  { key: '/choreo', label: '编舞系统', icon: VideoPlay },
-  { key: '/account', label: '个人中心', icon: UserFilled },
-  { key: '/settings', label: '应用设置', icon: Setting },
-]
+const menuItems = computed<MenuItem[]>(() => {
+  const items: MenuItem[] = [
+    { key: '/', label: '首页', icon: HomeFilled },
+    { key: '/robots', label: '机器人管理', icon: Connection },
+    { key: '/mapping', label: '地图工作台', icon: LocationInformation },
+    { key: '/choreo', label: '编舞系统', icon: VideoPlay },
+    { key: '/account', label: '个人中心', icon: UserFilled },
+    { key: '/settings', label: '应用设置', icon: Setting },
+  ]
+
+  if (developerSettingsEnabled.value) {
+    items.push({ key: '/developer', label: '开发者工具', icon: Tools })
+  }
+
+  return items
+})
 
 const isCompact = computed(() => asideMode.value === 'compact')
 const isHidden = computed(() => asideMode.value === 'hidden')
@@ -175,7 +185,7 @@ const accountIndicatorTone = computed(() => {
 
 const activeMenu = computed(() => {
   const path = route.path
-  const matched = [...menuItems]
+  const matched = [...menuItems.value]
     .sort((a, b) => b.key.length - a.key.length)
     .find(item => path === item.key || (item.key !== '/' && path.startsWith(`${item.key}/`)))
 

@@ -74,6 +74,13 @@
           </div>
           <div class="setting-side">
             <span class="setting-value">{{ developerSettingsEnabled ? '已启用' : '已关闭' }}</span>
+            <el-button
+              v-if="developerSettingsEnabled"
+              text
+              @click="router.push('/developer')"
+            >
+              打开工具
+            </el-button>
             <el-switch
               :model-value="developerSettingsEnabled"
               @update:model-value="handleDeveloperSettingsChange"
