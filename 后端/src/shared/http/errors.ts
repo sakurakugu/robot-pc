@@ -64,4 +64,7 @@ export const Http错误工厂 = {
   未找到(消息: string, 错误码?: string): HttpError {
     return new HttpError(404, 消息, 错误码)
   },
+  上游错误(消息: string, 错误码?: string, 详情?: unknown): HttpError {
+    return new HttpError(502, 消息, 错误码, 详情)
+  },
 }

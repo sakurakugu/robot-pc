@@ -62,3 +62,12 @@ export interface 机器人连接诊断结果 {
   telemetry: 机器人探测结果
   workstationWebsocket: 工作站通道诊断结果
 }
+
+export interface 机器人遥测数据 {
+  online: boolean
+  power: number | null
+  temp: number | null
+  model: string | null
+  dev_name: string | null
+  [key: string]: unknown
+}

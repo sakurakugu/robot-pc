@@ -8,6 +8,7 @@ import type {
   RobotDiagnosisResponse,
   RobotDiscoveryResponse,
   RobotListResponse,
+  RobotTelemetryResponse,
   SaveRobotPayload,
 } from './types'
 
@@ -33,6 +34,10 @@ export function deleteRobot(uuid: string): Promise<{ success: boolean; message: 
 
 export function getRobotDiagnosis(uuid: string): Promise<RobotDiagnosisResponse> {
   return http.get(`/api/v1/robots/${encodeURIComponent(uuid)}/diagnosis`)
+}
+
+export function getRobotTelemetry(uuid: string): Promise<RobotTelemetryResponse> {
+  return http.get(`/api/v1/robots/${encodeURIComponent(uuid)}/telemetry`)
 }
 
 export async function fetchCloudRobotList(): Promise<CloudRobotListResponse> {

@@ -202,6 +202,13 @@
         <div class="robot-card-actions">
           <el-button
             size="small"
+            type="primary"
+            @click.stop="openOperation(robot)"
+          >
+            操作
+          </el-button>
+          <el-button
+            size="small"
             @click.stop="openDetail(robot)"
           >
             接入详情
@@ -1373,6 +1380,10 @@ function openEditDialog(robot: Robot): void {
   form.serverUrl = robot.serverUrl || ''
   tagsText.value = (robot.tags || []).join(', ')
   dialogVisible.value = true
+}
+
+function openOperation(robot: Robot): void {
+  router.push(`/robots/${encodeURIComponent(robot.uuid)}/operation`)
 }
 
 function resetForm(): void {

@@ -5,7 +5,7 @@ import 配置 from '../../infra/config'
 import { 诊断机器人连接 } from './diagnosis'
 import { 扫描局域网机器人 } from './mdns-discovery'
 import type { RobotRepository } from './repository'
-import type { 保存机器人输入, 工作站接入候选 } from './types'
+import type { 保存机器人输入, 工作站接入候选, 机器人遥测数据 } from './types'
 
 export class 机器人控制器 {
   constructor(
@@ -87,6 +87,27 @@ export class 机器人控制器 {
     const diagnosis = await 诊断机器人连接(robot, this.是否机器人在线(uuid))
     return 返回数据({ diagnosis })
   })
+
+  getRobotTelemetry = 处理控制器(async (req) => {
+    const rawUuid = req.params.uuid
+    const uuid = Array.isArray(rawUuid) ? rawUuid[0] : rawUuid
+    if (!uuid) {
+      throw Http错误工厂.参数错误('机器人 UUID 不能为空', 'ROBOT_UUID_REQUIRED')
+    }
+
+    const robot = await this.仓库.getRobot(uuid)
+    if (!robot) {
+      throw Http错误工厂.未找到('未找到指定机器人', 'ROBOT_NOT_FOUND')
+    }
+
+    const serverUrl = 规范化机器人服务地址(robot.serverUrl) || (robot.ip ? `http://${robot.ip}:8080` : null)
+    if (!serverUrl) {
+      throw Http错误工厂.参数错误('机器人缺少 robot-server 地址或 IP', 'ROBOT_SERVER_URL_REQUIRED')
+    }
+
+    const data = await 拉取机器人遥测(serverUrl)
+    return 返回数据({ telemetry: data })
+  })
 }
 
 function 构建工作站接入候选(requestHost: string): 工作站接入候选[] {
@@ -128,4 +149,44 @@ function 解析扫描超时(value: unknown): number {
   }
 
   return Math.floor(parsed)
+}
+
+function 规范化机器人服务地址(value: string | null | undefined): string | null {
+  if (!value) {
+    return null
+  }
+  const trimmed = value.trim().replace(/\/+$/, '')
+  return trimmed || null
+}
+
+async function 拉取机器人遥测(serverUrl: string): Promise<机器人遥测数据> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 3000)
+
+  try {
+    const response = await fetch(`${serverUrl}/api/v1/telemetry`, {
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      throw Http错误工厂.上游错误(`机器人遥测接口异常：HTTP ${response.status}`, 'ROBOT_TELEMETRY_HTTP_ERROR')
+    }
+
+    const payload = await response.json() as { data?: Record<string, unknown> }
+    const data = payload.data && typeof payload.data === 'object' ? payload.data : {}
+    return {
+      ...data,
+      online: Boolean(data.online),
+      power: typeof data.power === 'number' ? data.power : null,
+      temp: typeof data.temp === 'number' ? data.temp : null,
+      model: typeof data.model === 'string' ? data.model : null,
+      dev_name: typeof data.dev_name === 'string' ? data.dev_name : null,
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw Http错误工厂.上游错误('机器人遥测接口超时', 'ROBOT_TELEMETRY_TIMEOUT')
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
 }

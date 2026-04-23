@@ -7,6 +7,7 @@ export function createRobotRoutes(controller: 机器人控制器): Router {
   router.get('/discover', controller.discoverRobots)
   router.get('/access-info', controller.getAccessInfo)
   router.get('/:uuid/diagnosis', controller.getRobotDiagnosis)
+  router.get('/:uuid/telemetry', controller.getRobotTelemetry)
   router.post('/', controller.saveRobot)
   router.put('/:uuid', controller.saveRobot)
   router.delete('/:uuid', controller.deleteRobot)

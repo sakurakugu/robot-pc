@@ -117,3 +117,19 @@ export interface RobotDiagnosisResponse {
     diagnosis: RobotConnectionDiagnosis
   }
 }
+
+export interface RobotTelemetry {
+  online: boolean
+  power: number | null
+  temp: number | null
+  model: string | null
+  dev_name: string | null
+  [key: string]: unknown
+}
+
+export interface RobotTelemetryResponse {
+  success: boolean
+  data: {
+    telemetry: RobotTelemetry
+  }
+}
