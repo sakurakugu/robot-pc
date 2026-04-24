@@ -225,7 +225,7 @@
                     <el-button
                       size="small"
                       :icon="ZoomOut"
-                      :disabled="mapCanvasZoom <= MAP_CANVAS_MIN_ZOOM"
+                      :disabled="!canZoomCanvas || mapCanvasZoom <= MAP_CANVAS_MIN_ZOOM"
                       title="缩小地图"
                       @click="zoomOutMapCanvas"
                     />
@@ -239,7 +239,7 @@
                     <el-button
                       size="small"
                       :icon="ZoomIn"
-                      :disabled="mapCanvasZoom >= MAP_CANVAS_MAX_ZOOM"
+                      :disabled="!canZoomCanvas || mapCanvasZoom >= MAP_CANVAS_MAX_ZOOM"
                       title="放大地图"
                       @click="zoomInMapCanvas"
                     />
@@ -262,7 +262,10 @@
                 <span>{{ realtimeMapPreviewSummary }}</span>
               </div>
               <div class="realtime-map-canvas-shell">
-                <div class="realtime-map-stage">
+                <div
+                  class="realtime-map-stage"
+                  :style="realtimeMapStageStyle"
+                >
                   <canvas
                     ref="mapPreviewCanvasRef"
                     class="realtime-map-canvas"
@@ -324,6 +327,7 @@
 
               <svg
                 class="realtime-preview-canvas"
+                :style="standalonePreviewCanvasStyle"
                 :viewBox="`0 0 ${STANDALONE_LIDAR_PREVIEW_SIZE} ${STANDALONE_LIDAR_PREVIEW_SIZE}`"
                 aria-label="实时激光预览"
               >
@@ -1140,10 +1144,19 @@ const showRobotMapHint = computed(() => {
   }
   return normalizeDisplayPath(remoteMapSaveDir.value) !== normalizeDisplayPath(runtime.value.mapDirectory)
 })
+const canZoomCanvas = computed(() => !!selectedMap.value || realtimeMapPreviewReady.value || standaloneLidarPreviewReady.value)
 const mapCanvasStyle = computed<Record<string, string>>(() => ({
   width: `${Math.round(mapCanvasZoom.value * 100)}%`,
   minWidth: mapCanvasZoom.value < 1 ? '0' : '100%',
   maxWidth: 'none',
+}))
+const realtimeMapStageStyle = computed<Record<string, string>>(() => ({
+  width: `min(${Math.round(mapCanvasZoom.value * 100)}%, ${Math.round(1400 * mapCanvasZoom.value)}px)`,
+  minWidth: mapCanvasZoom.value < 1 ? '0' : '100%',
+  maxWidth: 'none',
+}))
+const standalonePreviewCanvasStyle = computed<Record<string, string>>(() => ({
+  width: `min(${Math.round(mapCanvasZoom.value * 100)}%, ${Math.round(520 * mapCanvasZoom.value)}px)`,
 }))
 const mapCanvasZoomLabel = computed(() => `${Math.round(mapCanvasZoom.value * 100)}%`)
 const draftGoalPoseStyle = computed(() => {
@@ -3262,7 +3275,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  align-items: center;
+  align-items: stretch;
   padding: 28px 20px;
   border-radius: 24px;
   background: linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92));
@@ -3298,8 +3311,8 @@ onBeforeUnmount(() => {
 
 .realtime-map-canvas-shell {
   width: 100%;
-  max-height: min(64vh, 720px);
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
   padding: 14px;
   border-radius: 20px;
   background:
@@ -3341,8 +3354,10 @@ onBeforeUnmount(() => {
 }
 
 .realtime-preview-canvas {
+  display: block;
   width: min(100%, 520px);
   aspect-ratio: 1;
+  margin: 0 auto;
   border-radius: 24px;
   background:
     radial-gradient(circle at center, rgba(14, 116, 144, 0.22), rgba(15, 23, 42, 0.95) 68%),
