@@ -208,7 +208,16 @@
         <div class="panel-surface">
           <div class="panel-header">
             <div class="viewer-header-main">
-              <h2>地图画布</h2>
+              <div class="viewer-header-topline">
+                <h2>地图画布</h2>
+                <div class="canvas-legend">
+                  <span><i class="legend-dot robot" />机器人</span>
+                  <span><i class="legend-dot goal" />目标点</span>
+                  <span><i class="legend-dot lidar" />激光扫描</span>
+                  <span><i class="legend-dot nav-path" />导航路径</span>
+                  <span><i class="legend-dot patrol-path" />巡逻路线</span>
+                </div>
+              </div>
               <div class="viewer-header-subline">
                 <p>显示地图底图，并叠加机器人位姿、目标位姿与实时激光扫描</p>
                 <div class="map-toolbar">
@@ -237,13 +246,6 @@
                   </el-button-group>
                 </div>
               </div>
-            </div>
-            <div class="canvas-legend">
-              <span><i class="legend-dot robot" />机器人</span>
-              <span><i class="legend-dot goal" />目标点</span>
-              <span><i class="legend-dot lidar" />激光扫描</span>
-              <span><i class="legend-dot nav-path" />导航路径</span>
-              <span><i class="legend-dot patrol-path" />巡逻路线</span>
             </div>
           </div>
 
@@ -399,10 +401,6 @@
             v-else
             class="viewer-stage"
           >
-            <div class="map-stage-meta">
-              <span>地图文件：{{ selectedMap.yamlPath }}</span>
-              <span>图片文件：{{ selectedMap.imagePath }}</span>
-            </div>
             <div
               class="canvas-tip"
               :class="{ 'canvas-tip-pending': pendingGoalAnchor }"
@@ -1004,15 +1002,15 @@
 </template>
 
 <script setup lang="ts">
+import { getRobotList } from '@/features/robot/api'
+import type { Robot } from '@/features/robot/types'
+import PageHeader from '@/share/components/PageHeader.vue'
+import { useWebSocket } from '@/share/websocket/useWebSocket'
 import { Expand, Fold, RefreshRight, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Map } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import PageHeader from '@/share/components/PageHeader.vue'
-import { getRobotList } from '@/features/robot/api'
-import type { Robot } from '@/features/robot/types'
-import { useWebSocket } from '@/share/websocket/useWebSocket'
 import { mappingApi } from '../api'
 import type {
   LidarScan,
@@ -2950,13 +2948,27 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  flex: 1;
+}
+
+.viewer-header-topline {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
 }
 
 .viewer-header-subline {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.viewer-header-subline p {
+  min-width: 0;
 }
 
 .panel-header p {
@@ -3130,22 +3142,24 @@ onBeforeUnmount(() => {
 
 .canvas-legend {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
-  gap: 14px;
+  gap: 12px;
   color: var(--studio-text-secondary);
-  font-size: 13px;
+  font-size: 12px;
+  min-width: 0;
 }
 
 .canvas-legend span {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .legend-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
 }
 
@@ -3169,17 +3183,6 @@ onBeforeUnmount(() => {
   background: #f59e0b;
 }
 
-.map-stage-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
-  color: var(--studio-text-muted);
-  font-size: 12px;
-  word-break: break-all;
-  flex-shrink: 0;
-}
-
 .canvas-tip {
   margin-bottom: 14px;
   padding: 10px 12px;
@@ -3195,6 +3198,14 @@ onBeforeUnmount(() => {
   color: #c2410c;
 }
 
+.viewer-stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .map-toolbar {
   display: flex;
   align-items: center;
@@ -3203,6 +3214,7 @@ onBeforeUnmount(() => {
 
 .map-canvas-scroll {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   padding: 20px;
   border-radius: 24px;
@@ -3821,6 +3833,17 @@ onBeforeUnmount(() => {
   .panel-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .viewer-header-topline,
+  .viewer-header-subline {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .canvas-legend {
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 }
 </style>
