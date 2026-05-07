@@ -224,7 +224,7 @@
                   <el-button
                     size="small"
                     :type="mapCanvasPanMode ? 'primary' : ''"
-                    :disabled="!selectedMap"
+                    :disabled="!showPrimaryCanvasStage"
                     title="开启后可拖动画布，滚轮缩放"
                     @click="toggleMapCanvasPanMode"
                   >
@@ -255,7 +255,7 @@
                   </el-button-group>
                   <el-button
                     size="small"
-                    :disabled="!selectedMap"
+                    :disabled="!showPrimaryCanvasStage"
                     title="将地图移动回画布中心"
                     @click="centerMapCanvas"
                   >
@@ -267,74 +267,11 @@
           </div>
 
           <div
-            v-if="showRealtimeMapPreview || !selectedMap"
+            v-if="!showPrimaryCanvasStage"
             class="viewer-empty"
           >
             <div
-              v-if="realtimeMapPreviewReady"
-              class="realtime-map-preview"
-            >
-              <div class="realtime-preview-header">
-                <strong>实时建图预览</strong>
-                <span>{{ realtimeMapPreviewSummary }}</span>
-              </div>
-              <div class="realtime-map-canvas-shell">
-                <div
-                  class="realtime-map-stage"
-                  :style="realtimeMapStageStyle"
-                >
-                  <canvas
-                    ref="mapPreviewCanvasRef"
-                    class="realtime-map-canvas"
-                    aria-label="实时建图预览"
-                  />
-                  <svg
-                    v-if="realtimeMapPreview && (realtimeMapScanPoints.length > 0 || realtimeMapRobotMarker || realtimeMapGoalMarker)"
-                    class="realtime-map-overlay"
-                    :viewBox="`0 0 ${realtimeMapPreview.width} ${realtimeMapPreview.height}`"
-                    preserveAspectRatio="none"
-                  >
-                    <circle
-                      v-for="point in realtimeMapScanPoints"
-                      :key="point.id"
-                      class="scan-point realtime"
-                      :cx="point.x"
-                      :cy="point.y"
-                      r="1.4"
-                    />
-                    <g v-if="realtimeMapGoalMarker">
-                      <circle
-                        class="realtime-map-goal"
-                        :cx="realtimeMapGoalMarker.x"
-                        :cy="realtimeMapGoalMarker.y"
-                        r="6"
-                      />
-                    </g>
-                    <g v-if="realtimeMapRobotMarker">
-                      <line
-                        class="realtime-map-heading"
-                        :x1="realtimeMapRobotMarker.x"
-                        :y1="realtimeMapRobotMarker.y"
-                        :x2="realtimeMapRobotMarker.headingX"
-                        :y2="realtimeMapRobotMarker.headingY"
-                      />
-                      <circle
-                        class="realtime-map-robot"
-                        :cx="realtimeMapRobotMarker.x"
-                        :cy="realtimeMapRobotMarker.y"
-                        r="5.5"
-                      />
-                    </g>
-                  </svg>
-                </div>
-              </div>
-              <p class="realtime-preview-tip">
-                建图预览来自机器狗端 `/map`，通过工作站 WebSocket 实时推送；保存后仍需下载到本地地图仓库用于正式加载。
-              </p>
-            </div>
-
-            <div
-              v-else-if="standaloneLidarPreviewReady"
+              v-if="standaloneLidarPreviewReady"
               class="realtime-preview"
             >
               <div class="realtime-preview-header">
@@ -424,7 +361,6 @@
           >
             <div
               class="canvas-tip"
-              :class="{ 'canvas-tip-pending': pendingGoalAnchor }"
             >
               {{ mapCanvasTip }}
             </div>
@@ -441,7 +377,7 @@
                 @wheel.prevent="handleMapCanvasWheel"
               >
                 <div
-                  v-if="mapImageBroken"
+                  v-if="showLocalMapImage && mapImageBroken"
                   class="viewer-empty"
                 >
                   <el-result
@@ -458,7 +394,15 @@
                   :style="mapCanvasStyle"
                   @click="handleMapCanvasClick"
                 >
+                  <canvas
+                    v-if="mainCanvasUsesRealtimePreview"
+                    ref="mapPreviewCanvasRef"
+                    class="map-image realtime-map-inline-canvas"
+                    aria-label="实时建图预览"
+                  />
+
                   <img
+                    v-else-if="selectedMap"
                     ref="mapImageRef"
                     class="map-image"
                     :src="selectedMap.imageUrl"
@@ -470,7 +414,23 @@
                   >
 
                   <svg
-                    v-if="lidarScanPoints.length > 0"
+                    v-if="mainCanvasUsesRealtimePreview && realtimeMapScanPoints.length > 0"
+                    class="scan-overlay"
+                    :viewBox="`0 0 ${mapImageSize.width} ${mapImageSize.height}`"
+                    preserveAspectRatio="none"
+                  >
+                    <circle
+                      v-for="point in realtimeMapScanPoints"
+                      :key="point.id"
+                      class="scan-point realtime"
+                      :cx="point.x"
+                      :cy="point.y"
+                      r="1.4"
+                    />
+                  </svg>
+
+                  <svg
+                    v-else-if="lidarScanPoints.length > 0"
                     class="scan-overlay"
                     :viewBox="`0 0 ${mapImageSize.width} ${mapImageSize.height}`"
                     preserveAspectRatio="none"
@@ -513,16 +473,43 @@
                   </svg>
 
                   <div
-                    v-if="draftGoalPoseStyle"
+                    v-if="mainCanvasUsesRealtimePreview && realtimeMapGoalMarker"
+                    class="pose-marker goal realtime-goal-marker"
+                    :style="{
+                      left: `${(realtimeMapGoalMarker.x / mapImageSize.width) * 100}%`,
+                      top: `${(realtimeMapGoalMarker.y / mapImageSize.height) * 100}%`,
+                      transform: 'translate(-50%, -50%)',
+                    }"
+                    title="目标位姿"
+                  />
+
+                  <div
+                    v-if="mainCanvasUsesRealtimePreview && realtimeMapRobotMarker"
+                    class="pose-marker robot realtime-robot-marker"
+                    :style="{
+                      left: `${(realtimeMapRobotMarker.x / mapImageSize.width) * 100}%`,
+                      top: `${(realtimeMapRobotMarker.y / mapImageSize.height) * 100}%`,
+                      transform: 'translate(-50%, -50%)',
+                    }"
+                    title="机器人当前位置"
+                  >
+                    <span
+                      class="pose-arrow"
+                      :style="{ transform: `rotate(${currentPose?.yaw ?? 0}rad)` }"
+                    />
+                  </div>
+
+                  <div
+                    v-if="!mainCanvasUsesRealtimePreview && draftGoalPoseStyle"
                     class="pose-marker draft-goal"
                     :style="draftGoalPoseStyle"
-                    :title="pendingGoalAnchor ? '待确认导航朝向' : '导航表单目标'"
+                    title="导航表单目标"
                   >
                     <span class="pose-arrow pose-arrow-draft" />
                   </div>
 
                   <div
-                    v-if="currentPoseStyle"
+                    v-if="!mainCanvasUsesRealtimePreview && currentPoseStyle"
                     class="pose-marker robot"
                     :style="currentPoseStyle"
                     title="机器人当前位置"
@@ -531,7 +518,7 @@
                   </div>
 
                   <div
-                    v-if="goalPoseStyle"
+                    v-if="!mainCanvasUsesRealtimePreview && goalPoseStyle"
                     class="pose-marker goal"
                     :style="goalPoseStyle"
                     title="目标位姿"
@@ -539,31 +526,35 @@
                 </div>
                 <div
                   class="rotation-float"
-                  :class="{ disabled: !selectedMap }"
+                  :class="{ disabled: rotationControlDisabled }"
+                  @mousedown.stop
+                  @click.stop
+                  @wheel.stop
+                  @touchstart.stop
                 >
                   <div class="rotation-sidebar-title">
-                    旋转
+                    {{ rotationControlTitle }}
                   </div>
                   <input
-                    :value="mapCanvasRotation"
+                    :value="rotationControlValue"
                     class="rotation-slider"
                     type="range"
                     min="-180"
                     max="180"
                     step="1"
-                    :disabled="!selectedMap"
+                    :disabled="rotationControlDisabled"
                     orient="vertical"
-                    aria-label="地图旋转角度"
-                    @input="handleMapCanvasRotationInput"
+                    :aria-label="rotationControlAriaLabel"
+                    @input="handleRotationControlInput"
                   >
                   <div class="rotation-float-footer">
-                    <strong class="rotation-sidebar-value">{{ mapCanvasRotationLabel }}</strong>
+                    <strong class="rotation-sidebar-value">{{ rotationControlLabel }}</strong>
                     <el-button
                       size="small"
-                      :disabled="!selectedMap"
-                      @click="resetMapCanvasRotation"
+                      :disabled="rotationControlDisabled"
+                      @click="resetRotationControl"
                     >
-                      回正
+                      {{ rotationResetLabel }}
                     </el-button>
                   </div>
                 </div>
@@ -1141,7 +1132,6 @@ const mapCanvasDragStart = ref<{ clientX: number; clientY: number; offsetX: numb
 const mapCanvasViewportDirty = ref(false)
 const suppressNextMapCanvasClick = ref(false)
 const showDraftGoal = ref(false)
-const pendingGoalAnchor = ref<{ x: number; y: number } | null>(null)
 const runtime = ref<MappingRuntime>({
   mode: 'idle',
   activeMapId: null,
@@ -1214,6 +1204,9 @@ const showRobotMapHint = computed(() => {
   }
   return normalizeDisplayPath(remoteMapSaveDir.value) !== normalizeDisplayPath(runtime.value.mapDirectory)
 })
+const mainCanvasUsesRealtimePreview = computed(() => realtimeMapPreviewReady.value && runtime.value.mappingActive)
+const showLocalMapImage = computed(() => !!selectedMap.value && !mainCanvasUsesRealtimePreview.value)
+const showPrimaryCanvasStage = computed(() => mainCanvasUsesRealtimePreview.value || !!selectedMap.value)
 const canZoomCanvas = computed(() => !!selectedMap.value || realtimeMapPreviewReady.value || standaloneLidarPreviewReady.value)
 const mapCanvasStyle = computed<Record<string, string>>(() => ({
   width: mapImageSize.value.width > 0 ? `${mapImageSize.value.width}px` : '100%',
@@ -1222,23 +1215,37 @@ const mapCanvasStyle = computed<Record<string, string>>(() => ({
   transform: `translate(${mapCanvasOffset.value.x}px, ${mapCanvasOffset.value.y}px) scale(${mapCanvasZoom.value}) rotate(${mapCanvasRotation.value}deg)`,
   transformOrigin: 'center center',
 }))
-const realtimeMapStageStyle = computed<Record<string, string>>(() => ({
-  width: `min(${Math.round(mapCanvasZoom.value * 100)}%, ${Math.round(1400 * mapCanvasZoom.value)}px)`,
-  minWidth: mapCanvasZoom.value < 1 ? '0' : '100%',
-  maxWidth: 'none',
-}))
 const standalonePreviewCanvasStyle = computed<Record<string, string>>(() => ({
   width: `min(${Math.round(mapCanvasZoom.value * 100)}%, ${Math.round(520 * mapCanvasZoom.value)}px)`,
 }))
 const mapCanvasZoomLabel = computed(() => `${Math.round(mapCanvasZoom.value * 100)}%`)
 const mapCanvasRotationLabel = computed(() => `${Math.round(mapCanvasRotation.value)}°`)
+const navGoalYawLabel = computed(() => `${Math.round((navGoalYaw.value * 180) / Math.PI)}°`)
+const rotationControlTitle = computed(() => (mapCanvasPanMode.value ? '画布旋转' : '目标朝向'))
+const rotationControlLabel = computed(() => (mapCanvasPanMode.value ? mapCanvasRotationLabel.value : navGoalYawLabel.value))
+const rotationControlValue = computed(() => (
+  mapCanvasPanMode.value
+    ? mapCanvasRotation.value
+    : normalizeMapCanvasRotation((navGoalYaw.value * 180) / Math.PI)
+))
+const rotationControlDisabled = computed(() => (
+  mapCanvasPanMode.value
+    ? !showPrimaryCanvasStage.value
+    : !selectedMap.value || mainCanvasUsesRealtimePreview.value || !showDraftGoal.value
+))
+const rotationControlAriaLabel = computed(() => (mapCanvasPanMode.value ? '地图旋转角度' : '导航目标朝向'))
+const rotationResetLabel = computed(() => (mapCanvasPanMode.value ? '回正' : '朝前'))
 const mapCanvasTip = computed(() => {
   if (mapCanvasPanMode.value) {
-    return '移动模式已开启：按住左键拖动画布，滚轮可围绕鼠标位置缩放。'
+    return '移动模式已开启：按住左键拖动画布，滚轮可围绕鼠标位置缩放，右侧旋转条可旋转画布。'
   }
-  return pendingGoalAnchor.value
-    ? '已设置目标点，请在画布上再点击一次确定朝向。'
-    : '在画布上点击可设置导航目标；连续两次点击可精确设置朝向。'
+  if (mainCanvasUsesRealtimePreview.value) {
+    return '当前主画布显示实时建图预览，可拖动画布、缩放和旋转查看；保存并同步到本地后可继续作为正式底图使用。'
+  }
+  if (showDraftGoal.value) {
+    return '已设置导航目标点，可拖动右侧旋转条精确调整朝向。'
+  }
+  return '在画布上点击可设置导航目标点，右侧旋转条用于调整朝向。'
 })
 const draftGoalPoseStyle = computed(() => {
   if (!showDraftGoal.value || !selectedMap.value || mapImageSize.value.width <= 0 || mapImageSize.value.height <= 0) {
@@ -1269,14 +1276,6 @@ const realtimeMapRobotMarker = computed(() => buildPreviewPoseMarker(currentPose
 const realtimeMapGoalMarker = computed(() => buildPreviewPoseMarker(runtime.value.goalPose, false))
 const realtimeMapScanPoints = computed(() => buildPreviewLidarPoints(runtime.value.lidarScan, currentPose.value))
 const standaloneLidarPreviewReady = computed(() => !selectedMap.value && standaloneLidarPreviewPoints.value.length > 0)
-const realtimeMapPreviewSummary = computed(() => {
-  const preview = runtime.value.mapPreview
-  if (!preview) {
-    return '等待地图数据'
-  }
-  const mapName = preview.mapName || mapNameInput.value.trim() || '未命名地图'
-  return `${mapName} / ${preview.width}x${preview.height} / ${preview.resolution.toFixed(3)}m`
-})
 const standaloneLidarPreviewSummary = computed(() => {
   const scan = runtime.value.lidarScan
   if (!scan) {
@@ -1990,7 +1989,6 @@ async function sendNavigationCommand(command: NavigationCommand): Promise<void> 
       frameId: navGoalFrameId.value.trim() || 'map',
       mapName: navGoalMapName.value.trim() || mapNameInput.value.trim() || selectedMap.value?.name || activeMap.value?.name || null,
     }
-    pendingGoalAnchor.value = null
   }
 
   await sendRuntimeCommand(payload)
@@ -2105,6 +2103,28 @@ function handleImageError(): void {
   mapImageSize.value = { width: 0, height: 0 }
 }
 
+function syncMapImageSizeFromPreview(resetViewport = false): void {
+  const preview = runtime.value.mapPreview
+  if (!preview || preview.width <= 0 || preview.height <= 0) {
+    if (mainCanvasUsesRealtimePreview.value) {
+      mapImageSize.value = { width: 0, height: 0 }
+    }
+    return
+  }
+
+  const width = Math.trunc(preview.width)
+  const height = Math.trunc(preview.height)
+  if (mapImageSize.value.width === width && mapImageSize.value.height === height && !resetViewport) {
+    return
+  }
+
+  mapImageSize.value = { width, height }
+  if (resetViewport || !mapCanvasViewportDirty.value) {
+    fitMapCanvasToViewport()
+    mapCanvasViewportDirty.value = false
+  }
+}
+
 function renderMapPreview(): void {
   const preview = runtime.value.mapPreview
   const canvas = mapPreviewCanvasRef.value
@@ -2121,6 +2141,9 @@ function renderMapPreview(): void {
   const height = Math.trunc(preview.height)
   canvas.width = width
   canvas.height = height
+  if (mainCanvasUsesRealtimePreview.value) {
+    syncMapImageSizeFromPreview()
+  }
 
   const cells = decodeBase64Bytes(preview.data)
   if (cells.length < width * height) {
@@ -2234,18 +2257,39 @@ function setMapCanvasRotation(nextRotation: number): void {
   }
 }
 
-function handleMapCanvasRotationInput(event: Event): void {
+function setDraftGoalYawFromDegrees(nextDegrees: number): void {
+  navGoalYaw.value = Number((((normalizeMapCanvasRotation(nextDegrees) * Math.PI) / 180)).toFixed(3))
+}
+
+function handleRotationControlInput(event: Event): void {
   const target = event.target as HTMLInputElement
   const value = Number.parseFloat(target.value)
   if (!Number.isFinite(value)) {
     return
   }
 
-  mapCanvasViewportDirty.value = true
-  setMapCanvasRotation(value)
+  if (mapCanvasPanMode.value) {
+    mapCanvasViewportDirty.value = true
+    setMapCanvasRotation(value)
+    return
+  }
+
+  if (!showDraftGoal.value) {
+    return
+  }
+
+  setDraftGoalYawFromDegrees(value)
 }
 
-function resetMapCanvasRotation(): void {
+function resetRotationControl(): void {
+  if (!mapCanvasPanMode.value) {
+    if (!showDraftGoal.value) {
+      return
+    }
+    navGoalYaw.value = 0
+    return
+  }
+
   const shouldFitViewport = !mapCanvasViewportDirty.value
   mapCanvasRotation.value = 0
   if (shouldFitViewport) {
@@ -2382,42 +2426,21 @@ function handleMapCanvasClick(event: MouseEvent): void {
     return
   }
 
-  if (pendingGoalAnchor.value) {
-    const deltaX = clickedPoint.x - pendingGoalAnchor.value.x
-    const deltaY = clickedPoint.y - pendingGoalAnchor.value.y
-    const distance = Math.hypot(deltaX, deltaY)
-    if (distance < Math.max(selectedMap.value.resolution, 0.05)) {
-      ElMessage.warning('第二次点击距离过近，请点远一点以设置朝向')
-      return
-    }
-
-    navGoalX.value = Number(pendingGoalAnchor.value.x.toFixed(3))
-    navGoalY.value = Number(pendingGoalAnchor.value.y.toFixed(3))
-    navGoalYaw.value = Number(Math.atan2(deltaY, deltaX).toFixed(3))
-    navGoalMapName.value = selectedMap.value.name
-    pendingGoalAnchor.value = null
-    showDraftGoal.value = true
-    ElMessage.success('已设置导航目标点和朝向')
-    return
-  }
-
   navGoalX.value = Number(clickedPoint.x.toFixed(3))
   navGoalY.value = Number(clickedPoint.y.toFixed(3))
   navGoalMapName.value = selectedMap.value.name
   showDraftGoal.value = true
-  pendingGoalAnchor.value = {
-    x: navGoalX.value,
-    y: navGoalY.value,
-  }
 
   if (currentPose.value) {
     navGoalYaw.value = Number(Math.atan2(
       clickedPoint.y - currentPose.value.position[1],
       clickedPoint.x - currentPose.value.position[0],
     ).toFixed(3))
+  } else {
+    navGoalYaw.value = 0
   }
 
-  ElMessage.success('已设置目标点，请再次点击地图确定朝向')
+  ElMessage.success('已设置导航目标点，请使用右侧旋转条调整朝向')
 }
 
 function extractWorldPointFromEvent(event: MouseEvent): { x: number; y: number } | null {
@@ -3078,7 +3101,6 @@ watch(selectedMapId, () => {
   mapCanvasRotation.value = 0
   mapCanvasOffset.value = { x: 0, y: 0 }
   mapCanvasViewportDirty.value = false
-  pendingGoalAnchor.value = null
   showDraftGoal.value = false
 
   if (!mapNameInput.value.trim() && selectedMap.value?.name) {
@@ -3090,8 +3112,32 @@ watch(selectedMapId, () => {
 })
 
 watch(
+  mainCanvasUsesRealtimePreview,
+  (enabled) => {
+    mapImageBroken.value = false
+    mapImageSize.value = { width: 0, height: 0 }
+    mapCanvasZoom.value = 1
+    mapCanvasRotation.value = 0
+    mapCanvasOffset.value = { x: 0, y: 0 }
+    mapCanvasViewportDirty.value = false
+    if (enabled) {
+      showDraftGoal.value = false
+      syncMapImageSizeFromPreview(true)
+      return
+    }
+    if (!selectedMap.value) {
+      return
+    }
+  },
+  { flush: 'post' },
+)
+
+watch(
   () => runtime.value.mapPreview,
   () => {
+    if (mainCanvasUsesRealtimePreview.value) {
+      syncMapImageSizeFromPreview()
+    }
     renderMapPreview()
   },
   { flush: 'post' },
@@ -3795,7 +3841,7 @@ onBeforeUnmount(() => {
 .realtime-map-goal {
   fill: rgba(37, 99, 235, 0.9);
   stroke: rgba(219, 234, 254, 0.92);
-  stroke-width: 1.6;
+  stroke-width: 1.2;
 }
 
 .realtime-map-heading {
@@ -3860,18 +3906,26 @@ onBeforeUnmount(() => {
 }
 
 .pose-marker.goal {
-  border: 3px solid #fed7aa;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fed7aa;
   background: rgba(249, 115, 22, 0.24);
-  box-shadow: 0 0 0 8px rgba(249, 115, 22, 0.12);
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.12);
 }
 
 .pose-marker.draft-goal {
-  border: 2px dashed rgba(251, 146, 60, 0.92);
+  width: 12px;
+  height: 12px;
+  border: 1.5px dashed rgba(251, 146, 60, 0.92);
   background: rgba(251, 146, 60, 0.18);
-  box-shadow: 0 0 0 8px rgba(251, 146, 60, 0.1);
+  box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.1);
 }
 
 .pose-arrow-draft {
+  top: -6px;
+  border-left-width: 4px;
+  border-right-width: 4px;
+  border-bottom-width: 9px;
   border-bottom-color: #f97316;
 }
 
