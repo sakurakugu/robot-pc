@@ -614,6 +614,14 @@
                 <el-button
                   type="warning"
                   plain
+                  :disabled="!canDirectStandUp"
+                  @click="handleStandUp"
+                >
+                  站立
+                </el-button>
+                <el-button
+                  type="warning"
+                  plain
                   :disabled="!canSendCommand"
                   @click="sendMapCommand('start_mapping')"
                 >
@@ -658,6 +666,13 @@
                   {{ settingInitialPose ? '取消初始位姿' : '设置初始位姿' }}
                 </el-button>
               </div>
+              <p
+                v-if="selectedRobotId"
+                class="command-status-tip"
+              >
+                直连控制：{{ directControl.isConnected.value ? '已连接' : '连接中' }}
+                <span v-if="directControl.lastError.value">，{{ directControl.lastError.value }}</span>
+              </p>
               <p
                 v-if="settingInitialPose"
                 class="canvas-mode-tip"
@@ -1090,6 +1105,7 @@
 
 <script setup lang="ts">
 import { getRobotList } from '@/features/robot/api'
+import { useDirectRobotControl } from '@/features/robot/composables/useDirectRobotControl'
 import type { Robot } from '@/features/robot/types'
 import PageHeader from '@/share/components/PageHeader.vue'
 import { useWebSocket } from '@/share/websocket/useWebSocket'
@@ -1221,6 +1237,13 @@ const STANDALONE_LIDAR_PREVIEW_HALF = STANDALONE_LIDAR_PREVIEW_SIZE / 2
 const canSendCommand = computed(() => runtime.value.commandSource === 'stub' || runtime.value.commandSource === 'robot_ws')
 const selectedMap = computed(() => maps.value.find((item) => item.id === selectedMapId.value) || null)
 const selectedRemoteMap = computed(() => remoteMaps.value.find((item) => item.id === selectedRemoteMapId.value) || null)
+const selectedRobotInfo = computed(() => (
+  runtime.value.selectedRobot
+  ?? robots.value.find((item) => item.uuid === selectedRobotId.value)
+  ?? null
+))
+const selectedRobotIp = computed(() => selectedRobotInfo.value?.ip?.trim() || null)
+const directControl = useDirectRobotControl(selectedRobotIp)
 const canLoadRemoteMaps = computed(() => !!selectedRobotId.value && !!runtime.value.selectedRobot?.serverUrl)
 const selectedWaypointFile = computed(() => waypointFiles.value.find((item) => item.path === patrolWaypointFile.value.trim()) || null)
 const activeMap = computed(() => maps.value.find((item) => item.id === runtime.value.activeMapId) || null)
@@ -1356,6 +1379,7 @@ const realtimeMapRobotMarker = computed(() => buildPreviewPoseMarker(currentPose
 const realtimeMapGoalMarker = computed(() => buildPreviewPoseMarker(runtime.value.goalPose, false))
 const realtimeMapScanPoints = computed(() => buildPreviewLidarPoints(runtime.value.lidarScan, currentPose.value))
 const standaloneLidarPreviewReady = computed(() => !selectedMap.value && standaloneLidarPreviewPoints.value.length > 0)
+const canDirectStandUp = computed(() => !!selectedRobotIp.value && directControl.isConnected.value)
 const standaloneLidarPreviewSummary = computed(() => {
   const scan = runtime.value.lidarScan
   if (!scan) {
@@ -1856,6 +1880,25 @@ async function refreshAll(): Promise<void> {
   } finally {
     loading.value = false
   }
+}
+
+function handleStandUp(): void {
+  if (!selectedRobotId.value) {
+    ElMessage.warning('请先选择机器人')
+    return
+  }
+  if (!selectedRobotIp.value) {
+    ElMessage.warning('当前机器人缺少 IP，无法发送站立命令')
+    return
+  }
+  if (!directControl.isConnected.value) {
+    ElMessage.warning(directControl.lastError.value || '机器人直连控制通道未接入，请稍后重试')
+    directControl.connect()
+    return
+  }
+
+  directControl.sendAction('stand_up')
+  ElMessage.success('已发送站立命令')
 }
 
 async function loadRemoteMaps(showEmptyMessage = true): Promise<void> {
@@ -3349,6 +3392,7 @@ onBeforeUnmount(() => {
   mapCanvasResizeObserver = null
   handleMapCanvasPointerUp()
   cleanupRealtimeListener()
+  directControl.disconnect()
 })
 </script>
 
@@ -3394,6 +3438,13 @@ onBeforeUnmount(() => {
 
 .robot-option small {
   color: var(--studio-text-muted);
+}
+
+.command-status-tip {
+  margin: 12px 0 0;
+  color: var(--studio-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .workbench-grid {
