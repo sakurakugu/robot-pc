@@ -221,6 +221,15 @@
               <div class="viewer-header-subline">
                 <p>显示地图底图，并叠加机器人位姿、目标位姿与实时激光扫描</p>
                 <div class="map-toolbar">
+                  <el-button
+                    size="small"
+                    :type="mapCanvasPanMode ? 'primary' : ''"
+                    :disabled="!selectedMap"
+                    title="开启后可拖动画布，滚轮缩放"
+                    @click="toggleMapCanvasPanMode"
+                  >
+                    {{ mapCanvasPanMode ? '退出移动' : '移动模式' }}
+                  </el-button>
                   <el-button-group>
                     <el-button
                       size="small"
@@ -231,8 +240,8 @@
                     />
                     <el-button
                       size="small"
-                      title="恢复到适应画布（100%）"
-                      @click="resetMapCanvasZoom"
+                      title="恢复到适应画布"
+                      @click="fitMapCanvasToViewport"
                     >
                       {{ mapCanvasZoomLabel }}
                     </el-button>
@@ -244,6 +253,14 @@
                       @click="zoomInMapCanvas"
                     />
                   </el-button-group>
+                  <el-button
+                    size="small"
+                    :disabled="!selectedMap"
+                    title="将地图移动回画布中心"
+                    @click="centerMapCanvas"
+                  >
+                    居中
+                  </el-button>
                 </div>
               </div>
             </div>
@@ -409,103 +426,147 @@
               class="canvas-tip"
               :class="{ 'canvas-tip-pending': pendingGoalAnchor }"
             >
-              {{ pendingGoalAnchor ? '已设置目标点，请在画布上再点击一次确定朝向。' : '在画布上点击可设置导航目标；连续两次点击可精确设置朝向。' }}
+              {{ mapCanvasTip }}
             </div>
 
-            <div class="map-canvas-scroll">
+            <div class="viewer-stage-body">
               <div
-                v-if="mapImageBroken"
-                class="viewer-empty"
+                ref="mapCanvasScrollRef"
+                class="map-canvas-scroll"
+                :class="{
+                  'is-pan-enabled': mapCanvasPanMode,
+                  'is-panning': isMapCanvasDragging,
+                }"
+                @mousedown="handleMapCanvasPointerDown"
+                @wheel.prevent="handleMapCanvasWheel"
               >
-                <el-result
-                  icon="warning"
-                  title="地图图片加载失败"
-                  sub-title="请检查地图图片路径是否存在，或确认工作站后端是否正在运行。"
-                />
-              </div>
-
-              <div
-                v-else
-                class="map-canvas"
-                :style="mapCanvasStyle"
-                @click="handleMapCanvasClick"
-              >
-                <img
-                  ref="mapImageRef"
-                  class="map-image"
-                  :src="selectedMap.imageUrl"
-                  :alt="selectedMap.name"
-                  @load="handleImageLoad"
-                  @error="handleImageError"
-                >
-
-                <svg
-                  v-if="lidarScanPoints.length > 0"
-                  class="scan-overlay"
-                  :viewBox="`0 0 ${mapImageSize.width} ${mapImageSize.height}`"
-                  preserveAspectRatio="none"
-                >
-                  <circle
-                    v-for="point in lidarScanPoints"
-                    :key="point.id"
-                    class="scan-point"
-                    :cx="point.x"
-                    :cy="point.y"
-                    r="1.6"
-                  />
-                </svg>
-
-                <svg
-                  v-if="navigationPathPolyline || patrolRoutePolyline"
-                  class="route-overlay"
-                  :viewBox="`0 0 ${mapImageSize.width} ${mapImageSize.height}`"
-                  preserveAspectRatio="none"
-                >
-                  <polyline
-                    v-if="patrolRoutePolyline"
-                    class="patrol-route-line"
-                    :points="patrolRoutePolyline"
-                  />
-                  <polyline
-                    v-if="navigationPathPolyline"
-                    class="navigation-route-line"
-                    :points="navigationPathPolyline"
-                  />
-                  <circle
-                    v-for="item in patrolRouteMarkers"
-                    :key="`patrol-${item.index}`"
-                    class="patrol-route-point"
-                    :class="{ active: item.active }"
-                    :cx="item.x"
-                    :cy="item.y"
-                    :r="item.active ? 7 : 5"
-                  />
-                </svg>
-
                 <div
-                  v-if="draftGoalPoseStyle"
-                  class="pose-marker draft-goal"
-                  :style="draftGoalPoseStyle"
-                  :title="pendingGoalAnchor ? '待确认导航朝向' : '导航表单目标'"
+                  v-if="mapImageBroken"
+                  class="viewer-empty"
                 >
-                  <span class="pose-arrow pose-arrow-draft" />
+                  <el-result
+                    icon="warning"
+                    title="地图图片加载失败"
+                    sub-title="请检查地图图片路径是否存在，或确认工作站后端是否正在运行。"
+                  />
                 </div>
 
                 <div
-                  v-if="currentPoseStyle"
-                  class="pose-marker robot"
-                  :style="currentPoseStyle"
-                  title="机器人当前位置"
+                  v-else
+                  ref="mapCanvasRef"
+                  class="map-canvas"
+                  :style="mapCanvasStyle"
+                  @click="handleMapCanvasClick"
                 >
-                  <span class="pose-arrow" />
-                </div>
+                  <img
+                    ref="mapImageRef"
+                    class="map-image"
+                    :src="selectedMap.imageUrl"
+                    :alt="selectedMap.name"
+                    draggable="false"
+                    @load="handleImageLoad"
+                    @error="handleImageError"
+                    @dragstart.prevent
+                  >
 
+                  <svg
+                    v-if="lidarScanPoints.length > 0"
+                    class="scan-overlay"
+                    :viewBox="`0 0 ${mapImageSize.width} ${mapImageSize.height}`"
+                    preserveAspectRatio="none"
+                  >
+                    <circle
+                      v-for="point in lidarScanPoints"
+                      :key="point.id"
+                      class="scan-point"
+                      :cx="point.x"
+                      :cy="point.y"
+                      r="1.6"
+                    />
+                  </svg>
+
+                  <svg
+                    v-if="navigationPathPolyline || patrolRoutePolyline"
+                    class="route-overlay"
+                    :viewBox="`0 0 ${mapImageSize.width} ${mapImageSize.height}`"
+                    preserveAspectRatio="none"
+                  >
+                    <polyline
+                      v-if="patrolRoutePolyline"
+                      class="patrol-route-line"
+                      :points="patrolRoutePolyline"
+                    />
+                    <polyline
+                      v-if="navigationPathPolyline"
+                      class="navigation-route-line"
+                      :points="navigationPathPolyline"
+                    />
+                    <circle
+                      v-for="item in patrolRouteMarkers"
+                      :key="`patrol-${item.index}`"
+                      class="patrol-route-point"
+                      :class="{ active: item.active }"
+                      :cx="item.x"
+                      :cy="item.y"
+                      :r="item.active ? 7 : 5"
+                    />
+                  </svg>
+
+                  <div
+                    v-if="draftGoalPoseStyle"
+                    class="pose-marker draft-goal"
+                    :style="draftGoalPoseStyle"
+                    :title="pendingGoalAnchor ? '待确认导航朝向' : '导航表单目标'"
+                  >
+                    <span class="pose-arrow pose-arrow-draft" />
+                  </div>
+
+                  <div
+                    v-if="currentPoseStyle"
+                    class="pose-marker robot"
+                    :style="currentPoseStyle"
+                    title="机器人当前位置"
+                  >
+                    <span class="pose-arrow" />
+                  </div>
+
+                  <div
+                    v-if="goalPoseStyle"
+                    class="pose-marker goal"
+                    :style="goalPoseStyle"
+                    title="目标位姿"
+                  />
+                </div>
                 <div
-                  v-if="goalPoseStyle"
-                  class="pose-marker goal"
-                  :style="goalPoseStyle"
-                  title="目标位姿"
-                />
+                  class="rotation-float"
+                  :class="{ disabled: !selectedMap }"
+                >
+                  <div class="rotation-sidebar-title">
+                    旋转
+                  </div>
+                  <input
+                    :value="mapCanvasRotation"
+                    class="rotation-slider"
+                    type="range"
+                    min="-180"
+                    max="180"
+                    step="1"
+                    :disabled="!selectedMap"
+                    orient="vertical"
+                    aria-label="地图旋转角度"
+                    @input="handleMapCanvasRotationInput"
+                  >
+                  <div class="rotation-float-footer">
+                    <strong class="rotation-sidebar-value">{{ mapCanvasRotationLabel }}</strong>
+                    <el-button
+                      size="small"
+                      :disabled="!selectedMap"
+                      @click="resetMapCanvasRotation"
+                    >
+                      回正
+                    </el-button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1066,10 +1127,19 @@ const patrolWaypointFile = ref('')
 const mapImageSize = ref({ width: 0, height: 0 })
 const mapImageBroken = ref(false)
 const mapImageRef = ref<HTMLImageElement | null>(null)
+const mapCanvasRef = ref<HTMLDivElement | null>(null)
+const mapCanvasScrollRef = ref<HTMLDivElement | null>(null)
 const mapPreviewCanvasRef = ref<HTMLCanvasElement | null>(null)
 const MAP_CANVAS_MIN_ZOOM = 0.5
-const MAP_CANVAS_MAX_ZOOM = 2.5
+const MAP_CANVAS_MAX_ZOOM = 5
 const mapCanvasZoom = ref(1)
+const mapCanvasRotation = ref(0)
+const mapCanvasPanMode = ref(false)
+const isMapCanvasDragging = ref(false)
+const mapCanvasOffset = ref({ x: 0, y: 0 })
+const mapCanvasDragStart = ref<{ clientX: number; clientY: number; offsetX: number; offsetY: number } | null>(null)
+const mapCanvasViewportDirty = ref(false)
+const suppressNextMapCanvasClick = ref(false)
 const showDraftGoal = ref(false)
 const pendingGoalAnchor = ref<{ x: number; y: number } | null>(null)
 const runtime = ref<MappingRuntime>({
@@ -1146,9 +1216,11 @@ const showRobotMapHint = computed(() => {
 })
 const canZoomCanvas = computed(() => !!selectedMap.value || realtimeMapPreviewReady.value || standaloneLidarPreviewReady.value)
 const mapCanvasStyle = computed<Record<string, string>>(() => ({
-  width: `${Math.round(mapCanvasZoom.value * 100)}%`,
-  minWidth: mapCanvasZoom.value < 1 ? '0' : '100%',
+  width: mapImageSize.value.width > 0 ? `${mapImageSize.value.width}px` : '100%',
+  minWidth: '0',
   maxWidth: 'none',
+  transform: `translate(${mapCanvasOffset.value.x}px, ${mapCanvasOffset.value.y}px) scale(${mapCanvasZoom.value}) rotate(${mapCanvasRotation.value}deg)`,
+  transformOrigin: 'center center',
 }))
 const realtimeMapStageStyle = computed<Record<string, string>>(() => ({
   width: `min(${Math.round(mapCanvasZoom.value * 100)}%, ${Math.round(1400 * mapCanvasZoom.value)}px)`,
@@ -1159,6 +1231,15 @@ const standalonePreviewCanvasStyle = computed<Record<string, string>>(() => ({
   width: `min(${Math.round(mapCanvasZoom.value * 100)}%, ${Math.round(520 * mapCanvasZoom.value)}px)`,
 }))
 const mapCanvasZoomLabel = computed(() => `${Math.round(mapCanvasZoom.value * 100)}%`)
+const mapCanvasRotationLabel = computed(() => `${Math.round(mapCanvasRotation.value)}°`)
+const mapCanvasTip = computed(() => {
+  if (mapCanvasPanMode.value) {
+    return '移动模式已开启：按住左键拖动画布，滚轮可围绕鼠标位置缩放。'
+  }
+  return pendingGoalAnchor.value
+    ? '已设置目标点，请在画布上再点击一次确定朝向。'
+    : '在画布上点击可设置导航目标；连续两次点击可精确设置朝向。'
+})
 const draftGoalPoseStyle = computed(() => {
   if (!showDraftGoal.value || !selectedMap.value || mapImageSize.value.width <= 0 || mapImageSize.value.height <= 0) {
     return null
@@ -1637,6 +1718,7 @@ const sensorDetailItems = computed(() => [
 ])
 
 let pollTimer: number | null = null
+let mapCanvasResizeObserver: ResizeObserver | null = null
 const { onMessage, connect: wsConnect, disconnect: wsDisconnect } = useWebSocket()
 let removeRealtimeHandler: (() => void) | null = null
 let waypointDetailRequestSerial = 0
@@ -2014,6 +2096,8 @@ function handleImageLoad(event: Event): void {
     width: target.naturalWidth,
     height: target.naturalHeight,
   }
+  fitMapCanvasToViewport()
+  mapCanvasViewportDirty.value = false
 }
 
 function handleImageError(): void {
@@ -2081,21 +2165,218 @@ function occupancyToGray(value: number): number {
   return Math.max(36, Math.min(244, 244 - Math.round(value * 2.1)))
 }
 
+function clampMapCanvasZoom(value: number): number {
+  return Number(Math.min(MAP_CANVAS_MAX_ZOOM, Math.max(MAP_CANVAS_MIN_ZOOM, value)).toFixed(2))
+}
+
+function normalizeMapCanvasRotation(rotation: number): number {
+  const normalized = rotation % 360
+  if (normalized > 180) {
+    return normalized - 360
+  }
+  if (normalized <= -180) {
+    return normalized + 360
+  }
+  return normalized
+}
+
+function getMapCanvasRotatedBounds(): { width: number; height: number } {
+  const width = mapImageSize.value.width
+  const height = mapImageSize.value.height
+  if (width <= 0 || height <= 0) {
+    return { width, height }
+  }
+
+  const radians = (Math.abs(normalizeMapCanvasRotation(mapCanvasRotation.value)) * Math.PI) / 180
+  const cosine = Math.abs(Math.cos(radians))
+  const sine = Math.abs(Math.sin(radians))
+  return {
+    width: (width * cosine) + (height * sine),
+    height: (width * sine) + (height * cosine),
+  }
+}
+
+function centerMapCanvas(): void {
+  mapCanvasOffset.value = { x: 0, y: 0 }
+}
+
+function computeFitMapCanvasZoom(): number {
+  const scrollContainer = mapCanvasScrollRef.value
+  if (!scrollContainer || mapImageSize.value.width <= 0 || mapImageSize.value.height <= 0) {
+    return 1
+  }
+
+  const containerStyle = window.getComputedStyle(scrollContainer)
+  const horizontalPadding = Number.parseFloat(containerStyle.paddingLeft || '0') + Number.parseFloat(containerStyle.paddingRight || '0')
+  const verticalPadding = Number.parseFloat(containerStyle.paddingTop || '0') + Number.parseFloat(containerStyle.paddingBottom || '0')
+  const availableWidth = Math.max(0, scrollContainer.clientWidth - horizontalPadding)
+  const availableHeight = Math.max(0, scrollContainer.clientHeight - verticalPadding)
+  if (availableWidth <= 0 || availableHeight <= 0) {
+    return 1
+  }
+
+  const rotatedBounds = getMapCanvasRotatedBounds()
+  return clampMapCanvasZoom(Math.min(
+    availableWidth / rotatedBounds.width,
+    availableHeight / rotatedBounds.height,
+  ))
+}
+
+function fitMapCanvasToViewport(): void {
+  centerMapCanvas()
+  mapCanvasZoom.value = computeFitMapCanvasZoom()
+}
+
+function setMapCanvasRotation(nextRotation: number): void {
+  mapCanvasRotation.value = normalizeMapCanvasRotation(nextRotation)
+  if (!mapCanvasViewportDirty.value) {
+    fitMapCanvasToViewport()
+  }
+}
+
+function handleMapCanvasRotationInput(event: Event): void {
+  const target = event.target as HTMLInputElement
+  const value = Number.parseFloat(target.value)
+  if (!Number.isFinite(value)) {
+    return
+  }
+
+  mapCanvasViewportDirty.value = true
+  setMapCanvasRotation(value)
+}
+
+function resetMapCanvasRotation(): void {
+  const shouldFitViewport = !mapCanvasViewportDirty.value
+  mapCanvasRotation.value = 0
+  if (shouldFitViewport) {
+    fitMapCanvasToViewport()
+  }
+}
+
+function updateMapCanvasZoom(nextZoom: number, anchor?: { clientX: number; clientY: number }): void {
+  const clampedZoom = clampMapCanvasZoom(nextZoom)
+  if (clampedZoom === mapCanvasZoom.value) {
+    return
+  }
+
+  const scrollContainer = mapCanvasScrollRef.value
+  const canvas = mapCanvasRef.value
+  if (!scrollContainer || !canvas || !anchor) {
+    mapCanvasZoom.value = clampedZoom
+    return
+  }
+
+  const containerRect = scrollContainer.getBoundingClientRect()
+  const canvasRect = canvas.getBoundingClientRect()
+  const anchorOffsetX = anchor.clientX - containerRect.left - (containerRect.width / 2)
+  const anchorOffsetY = anchor.clientY - containerRect.top - (containerRect.height / 2)
+  const pointX = anchor.clientX - canvasRect.left
+  const pointY = anchor.clientY - canvasRect.top
+  const normalizedPointX = pointX - (canvasRect.width / 2)
+  const normalizedPointY = pointY - (canvasRect.height / 2)
+  const scaleRatio = clampedZoom / mapCanvasZoom.value
+
+  mapCanvasOffset.value = {
+    x: mapCanvasOffset.value.x - ((normalizedPointX - anchorOffsetX) * (scaleRatio - 1)),
+    y: mapCanvasOffset.value.y - ((normalizedPointY - anchorOffsetY) * (scaleRatio - 1)),
+  }
+  mapCanvasZoom.value = clampedZoom
+}
+
 function zoomOutMapCanvas(): void {
   const step = mapCanvasZoom.value <= 1 ? 0.1 : 0.25
-  mapCanvasZoom.value = Number(Math.max(MAP_CANVAS_MIN_ZOOM, mapCanvasZoom.value - step).toFixed(2))
+  mapCanvasViewportDirty.value = true
+  updateMapCanvasZoom(mapCanvasZoom.value - step)
 }
 
 function zoomInMapCanvas(): void {
   const step = mapCanvasZoom.value < 1 ? 0.1 : 0.25
-  mapCanvasZoom.value = Number(Math.min(MAP_CANVAS_MAX_ZOOM, mapCanvasZoom.value + step).toFixed(2))
+  mapCanvasViewportDirty.value = true
+  updateMapCanvasZoom(mapCanvasZoom.value + step)
 }
 
-function resetMapCanvasZoom(): void {
-  mapCanvasZoom.value = 1
+function toggleMapCanvasPanMode(): void {
+  mapCanvasPanMode.value = !mapCanvasPanMode.value
+  isMapCanvasDragging.value = false
+  mapCanvasDragStart.value = null
+  suppressNextMapCanvasClick.value = false
+}
+
+function handleMapCanvasPointerDown(event: MouseEvent): void {
+  if (!mapCanvasPanMode.value || event.button !== 0) {
+    return
+  }
+
+  event.preventDefault()
+
+  const scrollContainer = mapCanvasScrollRef.value
+  if (!scrollContainer) {
+    return
+  }
+
+  isMapCanvasDragging.value = true
+  mapCanvasDragStart.value = {
+    clientX: event.clientX,
+    clientY: event.clientY,
+    offsetX: mapCanvasOffset.value.x,
+    offsetY: mapCanvasOffset.value.y,
+  }
+
+  window.addEventListener('mousemove', handleMapCanvasPointerMove)
+  window.addEventListener('mouseup', handleMapCanvasPointerUp)
+}
+
+function handleMapCanvasPointerMove(event: MouseEvent): void {
+  const dragStart = mapCanvasDragStart.value
+  if (!dragStart) {
+    return
+  }
+
+  const deltaX = event.clientX - dragStart.clientX
+  const deltaY = event.clientY - dragStart.clientY
+  if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+    suppressNextMapCanvasClick.value = true
+    mapCanvasViewportDirty.value = true
+  }
+
+  mapCanvasOffset.value = {
+    x: dragStart.offsetX + deltaX,
+    y: dragStart.offsetY + deltaY,
+  }
+}
+
+function handleMapCanvasPointerUp(): void {
+  isMapCanvasDragging.value = false
+  mapCanvasDragStart.value = null
+  window.removeEventListener('mousemove', handleMapCanvasPointerMove)
+  window.removeEventListener('mouseup', handleMapCanvasPointerUp)
+}
+
+function handleMapCanvasWheel(event: WheelEvent): void {
+  if (!canZoomCanvas.value || Math.abs(event.deltaY) < 1) {
+    return
+  }
+
+  const step = event.deltaY > 0
+    ? (mapCanvasZoom.value <= 1 ? -0.1 : -0.25)
+    : (mapCanvasZoom.value < 1 ? 0.1 : 0.25)
+
+  updateMapCanvasZoom(mapCanvasZoom.value + step, {
+    clientX: event.clientX,
+    clientY: event.clientY,
+  })
 }
 
 function handleMapCanvasClick(event: MouseEvent): void {
+  if (suppressNextMapCanvasClick.value) {
+    suppressNextMapCanvasClick.value = false
+    return
+  }
+
+  if (mapCanvasPanMode.value || isMapCanvasDragging.value) {
+    return
+  }
+
   const clickedPoint = extractWorldPointFromEvent(event)
   if (!clickedPoint || !selectedMap.value) {
     return
@@ -2154,8 +2435,17 @@ function extractWorldPointFromEvent(event: MouseEvent): { x: number; y: number }
     return null
   }
 
-  const xRatio = (event.clientX - imageRect.left) / imageRect.width
-  const yRatio = (event.clientY - imageRect.top) / imageRect.height
+  const centerX = imageRect.left + (imageRect.width / 2)
+  const centerY = imageRect.top + (imageRect.height / 2)
+  const rotatedX = event.clientX - centerX
+  const rotatedY = event.clientY - centerY
+  const angle = (-mapCanvasRotation.value * Math.PI) / 180
+  const normalizedX = (rotatedX * Math.cos(angle)) - (rotatedY * Math.sin(angle))
+  const normalizedY = (rotatedX * Math.sin(angle)) + (rotatedY * Math.cos(angle))
+  const unrotatedClientX = centerX + normalizedX
+  const unrotatedClientY = centerY + normalizedY
+  const xRatio = (unrotatedClientX - imageRect.left) / imageRect.width
+  const yRatio = (unrotatedClientY - imageRect.top) / imageRect.height
   const imageX = xRatio * mapImageSize.value.width
   const imageY = yRatio * mapImageSize.value.height
   return {
@@ -2763,6 +3053,17 @@ function cleanupRealtimeListener(): void {
 }
 
 onMounted(async () => {
+  if (typeof ResizeObserver !== 'undefined') {
+    mapCanvasResizeObserver = new ResizeObserver(() => {
+      if (!mapCanvasViewportDirty.value && selectedMap.value && mapImageSize.value.width > 0 && mapImageSize.value.height > 0) {
+        fitMapCanvasToViewport()
+      }
+    })
+    if (mapCanvasScrollRef.value) {
+      mapCanvasResizeObserver.observe(mapCanvasScrollRef.value)
+    }
+  }
+
   setupRealtimeListener()
   await refreshAll()
   pollTimer = window.setInterval(() => {
@@ -2774,6 +3075,9 @@ watch(selectedMapId, () => {
   mapImageBroken.value = false
   mapImageSize.value = { width: 0, height: 0 }
   mapCanvasZoom.value = 1
+  mapCanvasRotation.value = 0
+  mapCanvasOffset.value = { x: 0, y: 0 }
+  mapCanvasViewportDirty.value = false
   pendingGoalAnchor.value = null
   showDraftGoal.value = false
 
@@ -2833,6 +3137,9 @@ onBeforeUnmount(() => {
   if (pollTimer !== null) {
     window.clearInterval(pollTimer)
   }
+  mapCanvasResizeObserver?.disconnect()
+  mapCanvasResizeObserver = null
+  handleMapCanvasPointerUp()
   cleanupRealtimeListener()
 })
 </script>
@@ -3219,6 +3526,13 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.viewer-stage-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .map-toolbar {
   display: flex;
   align-items: center;
@@ -3229,19 +3543,94 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
   min-height: 0;
+  position: relative;
   padding: 20px;
   border-radius: 24px;
   background: var(--studio-canvas-background);
   background-size: 24px 24px;
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rotation-float {
+  position: absolute;
+  top: 50%;
+  right: 18px;
+  transform: translateY(-50%);
+  width: 50px;
+  height: min(360px, calc(100% - 20px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 10px 16px;
+  border-radius: 24px;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.28);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  user-select: none;
+  z-index: 2;
+}
+
+.rotation-float.disabled {
+  opacity: 0.55;
+}
+
+.rotation-sidebar-title {
+  font-size: 12px;
+  color: #f8fafc;
+  letter-spacing: 0.08em;
+}
+
+.rotation-sidebar-value {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.rotation-slider {
+  width: 188px;
+  height: 34px;
+  margin: 0;
+  transform: rotate(-90deg);
+  accent-color: var(--el-color-primary);
+  cursor: pointer;
+}
+
+.rotation-slider:disabled {
+  cursor: not-allowed;
+}
+
+.rotation-float-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.map-canvas-scroll.is-pan-enabled {
+  cursor: grab;
+  user-select: none;
+}
+
+.map-canvas-scroll.is-pan-enabled.is-panning {
+  cursor: grabbing;
 }
 
 .map-canvas {
   position: relative;
   display: block;
-  min-width: 100%;
-  margin: 0 auto;
+  flex: 0 0 auto;
   cursor: crosshair;
+  will-change: transform;
+}
+
+.map-canvas-scroll.is-pan-enabled .map-canvas {
+  cursor: inherit;
 }
 
 .map-image {
@@ -3848,6 +4237,21 @@ onBeforeUnmount(() => {
   .panel-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .viewer-stage-body {
+    min-width: 0;
+  }
+
+  .rotation-float {
+    right: 12px;
+    width: 72px;
+    height: min(320px, calc(100% - 24px));
+    padding-inline: 6px;
+  }
+
+  .rotation-slider {
+    width: 148px;
   }
 
   .viewer-header-topline,
