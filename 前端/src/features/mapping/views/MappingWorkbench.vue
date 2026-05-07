@@ -500,6 +500,15 @@
                   </div>
 
                   <div
+                    v-if="!mainCanvasUsesRealtimePreview && draftInitialPoseStyle"
+                    class="pose-marker initial-pose"
+                    :style="draftInitialPoseStyle"
+                    title="定位初始位姿"
+                  >
+                    <span class="pose-arrow pose-arrow-initial" />
+                  </div>
+
+                  <div
                     v-if="!mainCanvasUsesRealtimePreview && draftGoalPoseStyle"
                     class="pose-marker draft-goal"
                     :style="draftGoalPoseStyle"
@@ -640,7 +649,21 @@
                 >
                   停止定位
                 </el-button>
+                <el-button
+                  type="success"
+                  plain
+                  :disabled="!selectedMap || !canSendCommand"
+                  @click="toggleInitialPoseMode"
+                >
+                  {{ settingInitialPose ? '取消初始位姿' : '设置初始位姿' }}
+                </el-button>
               </div>
+              <p
+                v-if="settingInitialPose"
+                class="canvas-mode-tip"
+              >
+                地图点击将设置定位初始位姿，右侧旋转条用于调整朝向，确认后点击“发送初始位姿”。
+              </p>
             </div>
 
             <div class="runtime-section">
@@ -707,6 +730,14 @@
                 />
               </div>
               <div class="section-actions">
+                <el-button
+                  v-if="settingInitialPose"
+                  type="success"
+                  :disabled="!canSendInitialPose"
+                  @click="sendInitialPoseCommand"
+                >
+                  发送初始位姿
+                </el-button>
                 <el-button
                   type="primary"
                   :disabled="!canSendCommand"
@@ -1069,6 +1100,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { mappingApi } from '../api'
 import type {
+  InitialPoseGoal,
   LidarScan,
   MapPreview,
   MappingCommand,
@@ -1113,6 +1145,13 @@ const navGoalY = ref(0)
 const navGoalYaw = ref(0)
 const navGoalFrameId = ref('map')
 const navGoalMapName = ref('')
+const initialPoseX = ref(0)
+const initialPoseY = ref(0)
+const initialPoseYaw = ref(0)
+const initialPoseFrameId = ref('map')
+const initialPoseMapName = ref('')
+const settingInitialPose = ref(false)
+const showDraftInitialPose = ref(false)
 const patrolTaskName = ref('')
 const patrolWaypointFile = ref('')
 const mapImageSize = ref({ width: 0, height: 0 })
@@ -1162,6 +1201,7 @@ const commandLabelMap: Record<RuntimeCommand, string> = {
   load_map: '加载地图',
   start_localization: '启动定位',
   stop_localization: '停止定位',
+  set_initial_pose: '设置初始位姿',
   navigate_to: '导航到点',
   cancel: '取消导航',
   pause: '暂停任务',
@@ -1221,19 +1261,32 @@ const standalonePreviewCanvasStyle = computed<Record<string, string>>(() => ({
 const mapCanvasZoomLabel = computed(() => `${Math.round(mapCanvasZoom.value * 100)}%`)
 const mapCanvasRotationLabel = computed(() => `${Math.round(mapCanvasRotation.value)}°`)
 const navGoalYawLabel = computed(() => `${Math.round((navGoalYaw.value * 180) / Math.PI)}°`)
+const initialPoseYawLabel = computed(() => `${Math.round((initialPoseYaw.value * 180) / Math.PI)}°`)
 const rotationControlTitle = computed(() => (mapCanvasPanMode.value ? '画布旋转' : '目标朝向'))
-const rotationControlLabel = computed(() => (mapCanvasPanMode.value ? mapCanvasRotationLabel.value : navGoalYawLabel.value))
+const rotationControlLabel = computed(() => (
+  mapCanvasPanMode.value
+    ? mapCanvasRotationLabel.value
+    : settingInitialPose.value
+      ? initialPoseYawLabel.value
+      : navGoalYawLabel.value
+))
 const rotationControlValue = computed(() => (
   mapCanvasPanMode.value
     ? mapCanvasRotation.value
-    : normalizeMapCanvasRotation((navGoalYaw.value * 180) / Math.PI)
+    : normalizeMapCanvasRotation((((settingInitialPose.value ? initialPoseYaw.value : navGoalYaw.value) * 180) / Math.PI))
 ))
 const rotationControlDisabled = computed(() => (
   mapCanvasPanMode.value
     ? !showPrimaryCanvasStage.value
-    : !selectedMap.value || mainCanvasUsesRealtimePreview.value || !showDraftGoal.value
+    : !selectedMap.value || mainCanvasUsesRealtimePreview.value || !(settingInitialPose.value ? showDraftInitialPose.value : showDraftGoal.value)
 ))
-const rotationControlAriaLabel = computed(() => (mapCanvasPanMode.value ? '地图旋转角度' : '导航目标朝向'))
+const rotationControlAriaLabel = computed(() => (
+  mapCanvasPanMode.value
+    ? '地图旋转角度'
+    : settingInitialPose.value
+      ? '定位初始位姿朝向'
+      : '导航目标朝向'
+))
 const rotationResetLabel = computed(() => (mapCanvasPanMode.value ? '回正' : '朝前'))
 const mapCanvasTip = computed(() => {
   if (mapCanvasPanMode.value) {
@@ -1242,10 +1295,37 @@ const mapCanvasTip = computed(() => {
   if (mainCanvasUsesRealtimePreview.value) {
     return '当前主画布显示实时建图预览，可拖动画布、缩放和旋转查看；保存并同步到本地后可继续作为正式底图使用。'
   }
+  if (settingInitialPose.value && showDraftInitialPose.value) {
+    return '已设置定位初始位姿，可拖动右侧旋转条精确调整朝向。'
+  }
+  if (settingInitialPose.value) {
+    return '点击地图设置定位初始位姿，右侧旋转条用于调整朝向。'
+  }
   if (showDraftGoal.value) {
     return '已设置导航目标点，可拖动右侧旋转条精确调整朝向。'
   }
   return '在画布上点击可设置导航目标点，右侧旋转条用于调整朝向。'
+})
+const canSendInitialPose = computed(() => !!selectedMap.value && canSendCommand.value && showDraftInitialPose.value)
+const draftInitialPoseStyle = computed(() => {
+  if (!showDraftInitialPose.value || !selectedMap.value || mapImageSize.value.width <= 0 || mapImageSize.value.height <= 0) {
+    return null
+  }
+
+  const targetMapName = initialPoseMapName.value.trim()
+  if (targetMapName && targetMapName !== selectedMap.value.name) {
+    return null
+  }
+
+  return buildPoseStyle(
+    {
+      position: [initialPoseX.value, initialPoseY.value, 0],
+      orientation: [0, 0, 0, 1],
+      yaw: initialPoseYaw.value,
+      confidence: 1,
+    },
+    true,
+  )
 })
 const draftGoalPoseStyle = computed(() => {
   if (!showDraftGoal.value || !selectedMap.value || mapImageSize.value.width <= 0 || mapImageSize.value.height <= 0) {
@@ -1954,6 +2034,7 @@ async function sendMapCommand(command: MappingCommand, mapId?: string): Promise<
     command: MappingCommand
     mapId?: string
     mapName?: string
+    pose?: InitialPoseGoal
   } = {
     type: 'map',
     command,
@@ -1969,6 +2050,27 @@ async function sendMapCommand(command: MappingCommand, mapId?: string): Promise<
   }
 
   await sendRuntimeCommand(payload)
+}
+
+async function sendInitialPoseCommand(): Promise<void> {
+  if (!selectedMap.value || !showDraftInitialPose.value) {
+    ElMessage.warning('请先在地图上设置初始位姿')
+    return
+  }
+
+  await sendRuntimeCommand({
+    type: 'map',
+    command: 'set_initial_pose',
+    mapId: selectedMap.value.id,
+    mapName: initialPoseMapName.value.trim() || selectedMap.value.name,
+    pose: {
+      x: initialPoseX.value,
+      y: initialPoseY.value,
+      yaw: initialPoseYaw.value,
+      frameId: initialPoseFrameId.value.trim() || 'map',
+      mapName: initialPoseMapName.value.trim() || selectedMap.value.name,
+    },
+  })
 }
 
 async function sendNavigationCommand(command: NavigationCommand): Promise<void> {
@@ -2258,7 +2360,12 @@ function setMapCanvasRotation(nextRotation: number): void {
 }
 
 function setDraftGoalYawFromDegrees(nextDegrees: number): void {
-  navGoalYaw.value = Number((((normalizeMapCanvasRotation(nextDegrees) * Math.PI) / 180)).toFixed(3))
+  const yaw = Number((((normalizeMapCanvasRotation(nextDegrees) * Math.PI) / 180)).toFixed(3))
+  if (settingInitialPose.value) {
+    initialPoseYaw.value = yaw
+    return
+  }
+  navGoalYaw.value = yaw
 }
 
 function handleRotationControlInput(event: Event): void {
@@ -2274,7 +2381,11 @@ function handleRotationControlInput(event: Event): void {
     return
   }
 
-  if (!showDraftGoal.value) {
+  if (settingInitialPose.value) {
+    if (!showDraftInitialPose.value) {
+      return
+    }
+  } else if (!showDraftGoal.value) {
     return
   }
 
@@ -2283,6 +2394,13 @@ function handleRotationControlInput(event: Event): void {
 
 function resetRotationControl(): void {
   if (!mapCanvasPanMode.value) {
+    if (settingInitialPose.value) {
+      if (!showDraftInitialPose.value) {
+        return
+      }
+      initialPoseYaw.value = 0
+      return
+    }
     if (!showDraftGoal.value) {
       return
     }
@@ -2426,6 +2544,25 @@ function handleMapCanvasClick(event: MouseEvent): void {
     return
   }
 
+  if (settingInitialPose.value) {
+    initialPoseX.value = Number(clickedPoint.x.toFixed(3))
+    initialPoseY.value = Number(clickedPoint.y.toFixed(3))
+    initialPoseMapName.value = selectedMap.value.name
+    showDraftInitialPose.value = true
+
+    if (currentPose.value) {
+      initialPoseYaw.value = Number(Math.atan2(
+        clickedPoint.y - currentPose.value.position[1],
+        clickedPoint.x - currentPose.value.position[0],
+      ).toFixed(3))
+    } else {
+      initialPoseYaw.value = 0
+    }
+
+    ElMessage.success('已设置定位初始位姿，请使用右侧旋转条调整朝向后发送')
+    return
+  }
+
   navGoalX.value = Number(clickedPoint.x.toFixed(3))
   navGoalY.value = Number(clickedPoint.y.toFixed(3))
   navGoalMapName.value = selectedMap.value.name
@@ -2441,6 +2578,18 @@ function handleMapCanvasClick(event: MouseEvent): void {
   }
 
   ElMessage.success('已设置导航目标点，请使用右侧旋转条调整朝向')
+}
+
+function toggleInitialPoseMode(): void {
+  if (!selectedMap.value) {
+    ElMessage.warning('请先选择地图')
+    return
+  }
+  settingInitialPose.value = !settingInitialPose.value
+  showDraftGoal.value = false
+  if (settingInitialPose.value && !initialPoseMapName.value.trim()) {
+    initialPoseMapName.value = selectedMap.value.name
+  }
 }
 
 function extractWorldPointFromEvent(event: MouseEvent): { x: number; y: number } | null {
@@ -2904,6 +3053,12 @@ function buildCommandSuccessMessage(
     }
   }
 
+  if (payload.type === 'map' && payload.command === 'set_initial_pose') {
+    showDraftInitialPose.value = false
+    settingInitialPose.value = false
+    return '定位初始位姿已发送'
+  }
+
   return fallbackMessage || '命令已发送'
 }
 
@@ -3102,12 +3257,17 @@ watch(selectedMapId, () => {
   mapCanvasOffset.value = { x: 0, y: 0 }
   mapCanvasViewportDirty.value = false
   showDraftGoal.value = false
+  showDraftInitialPose.value = false
+  settingInitialPose.value = false
 
   if (!mapNameInput.value.trim() && selectedMap.value?.name) {
     mapNameInput.value = selectedMap.value.name
   }
   if (!navGoalMapName.value.trim() && selectedMap.value?.name) {
     navGoalMapName.value = selectedMap.value.name
+  }
+  if (!initialPoseMapName.value.trim() && selectedMap.value?.name) {
+    initialPoseMapName.value = selectedMap.value.name
   }
 })
 
@@ -3122,6 +3282,8 @@ watch(
     mapCanvasViewportDirty.value = false
     if (enabled) {
       showDraftGoal.value = false
+      showDraftInitialPose.value = false
+      settingInitialPose.value = false
       syncMapImageSizeFromPreview(true)
       return
     }
@@ -3913,6 +4075,12 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.12);
 }
 
+.pose-marker.initial-pose {
+  border: 2px solid rgba(187, 247, 208, 0.96);
+  background: rgba(34, 197, 94, 0.20);
+  box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.12);
+}
+
 .pose-marker.draft-goal {
   width: 12px;
   height: 12px;
@@ -3927,6 +4095,10 @@ onBeforeUnmount(() => {
   border-right-width: 4px;
   border-bottom-width: 9px;
   border-bottom-color: #f97316;
+}
+
+.pose-arrow-initial {
+  border-bottom-color: #22c55e;
 }
 
 .runtime-panel {
@@ -3970,6 +4142,13 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 12px;
+}
+
+.canvas-mode-tip {
+  margin: 12px 0 0;
+  color: #3f6212;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .command-grid :last-child:nth-child(odd) {

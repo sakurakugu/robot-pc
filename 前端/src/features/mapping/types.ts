@@ -3,7 +3,13 @@ export type MappingTelemetrySource = 'stub' | 'robot'
 export type MappingCommandSource = 'stub' | 'robot_ws' | 'pending_robot'
 export type RuntimeCommandChannel = 'map' | 'navigation' | 'patrol'
 
-export type MappingCommand = 'start_mapping' | 'stop_mapping' | 'load_map' | 'start_localization' | 'stop_localization'
+export type MappingCommand =
+  | 'start_mapping'
+  | 'stop_mapping'
+  | 'load_map'
+  | 'start_localization'
+  | 'stop_localization'
+  | 'set_initial_pose'
 export type NavigationCommand = 'navigate_to' | 'cancel' | 'pause' | 'resume' | 'terminate'
 export type PatrolCommand = 'start_patrol' | 'pause' | 'resume' | 'terminate'
 export type RuntimeCommand = MappingCommand | NavigationCommand | PatrolCommand
@@ -79,6 +85,14 @@ export interface PlanarPose {
 }
 
 export interface NavigationGoal {
+  x: number
+  y: number
+  yaw: number
+  frameId: string
+  mapName: string | null
+}
+
+export interface InitialPoseGoal {
   x: number
   y: number
   yaw: number
@@ -242,6 +256,7 @@ export interface MapCommandRequest {
   command: MappingCommand
   mapId?: string
   mapName?: string
+  pose?: InitialPoseGoal
 }
 
 export interface NavigationCommandRequest {

@@ -9,6 +9,7 @@ export type 地图命令类型 =
   | 'load_map'
   | 'start_localization'
   | 'stop_localization'
+  | 'set_initial_pose'
 
 export type 导航命令类型 =
   | 'navigate_to'
@@ -96,6 +97,14 @@ export interface 平面位姿 {
 }
 
 export interface 导航目标 {
+  x: number
+  y: number
+  yaw: number
+  frameId: string
+  mapName: string | null
+}
+
+export interface 初始位姿目标 {
   x: number
   y: number
   yaw: number
@@ -259,6 +268,7 @@ export interface 地图控制请求 {
   command: 地图命令类型
   mapId?: string
   mapName?: string
+  pose?: 初始位姿目标
 }
 
 export interface 导航控制请求 {

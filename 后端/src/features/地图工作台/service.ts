@@ -13,6 +13,7 @@ import type { RobotRecord } from '../机器人管理/types'
 import type {
   传感器状态信息,
   地图元数据,
+  初始位姿目标,
   巡逻文件详情,
   巡逻文件元数据,
   巡逻点详情,
@@ -535,6 +536,21 @@ export class 地图工作台服务 {
         this.运行状态.mode = this.运行状态.activeMapId ? 'map_loaded' : 'idle'
         this.运行状态.taskState = null
         break
+      case 'set_initial_pose':
+        if (!请求.pose) {
+          throw Http错误工厂.参数错误('初始位姿不能为空', 'INITIAL_POSE_REQUIRED')
+        }
+        if (!目标地图) {
+          throw Http错误工厂.参数错误('设置初始位姿前请先加载地图', 'MAP_REQUIRED')
+        }
+        this.运行状态.mode = 'localizing'
+        this.运行状态.mappingActive = false
+        this.运行状态.localizationActive = true
+        this.运行状态.activeMapId = 目标地图.id
+        this.运行状态.currentPose = 由导航目标创建位姿(请求.pose)
+        this.运行状态.goalPose = null
+        this.运行状态.taskState = null
+        break
       default:
         throw Http错误工厂.参数错误('不支持的地图命令', 'UNSUPPORTED_COMMAND')
     }
@@ -993,7 +1009,7 @@ export class 地图工作台服务 {
       const timeout = setTimeout(() => {
         this.待完成命令.delete(requestId)
         reject(Http错误工厂.参数错误('等待机器人地图命令响应超时', 'ROBOT_COMMAND_TIMEOUT'))
-      }, 5000)
+      }, 20000)
 
       this.待完成命令.set(requestId, {
         robotId,
@@ -1412,7 +1428,7 @@ function 构建运行时命令负载(
 ): Record<string, unknown> {
   switch (请求.type) {
     case 'map':
-      return 构建地图命令负载(requestId, 请求.command, map, 请求.mapName)
+      return 构建地图命令负载(requestId, 请求, map)
     case 'navigation':
       return 构建导航命令负载(requestId, 请求)
     case 'patrol':
@@ -1426,10 +1442,11 @@ function 构建运行时命令负载(
 
 function 构建地图命令负载(
   requestId: string,
-  command: 地图命令类型,
+  请求: Extract<工作台命令请求, { type: 'map' }>,
   map: 地图元数据 | null,
-  mapName?: string,
 ): Record<string, unknown> {
+  const { command } = 请求
+  const mapName = 请求.mapName
   const 目标地图名 = typeof mapName === 'string' && mapName.trim().length > 0 ? mapName.trim() : map?.name
 
   switch (command) {
@@ -1461,6 +1478,12 @@ function 构建地图命令负载(
       return {
         requestId,
         command: 'stop_localization',
+      }
+    case 'set_initial_pose':
+      return {
+        requestId,
+        command: 'set_initial_pose',
+        pose: 构建初始位姿负载(请求.pose, 目标地图名),
       }
     default:
       return {
@@ -1498,6 +1521,23 @@ function 构建导航命令负载(
   return {
     requestId,
     command: 请求.command,
+  }
+}
+
+function 构建初始位姿负载(
+  pose: 初始位姿目标 | undefined,
+  mapName: string | null | undefined,
+): Record<string, unknown> | undefined {
+  if (!pose) {
+    return undefined
+  }
+
+  return {
+    x: pose.x,
+    y: pose.y,
+    yaw: pose.yaw,
+    frame_id: pose.frameId,
+    map_name: pose.mapName ?? mapName ?? undefined,
   }
 }
 
