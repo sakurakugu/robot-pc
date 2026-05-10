@@ -15,6 +15,7 @@ import 配置 from './infra/config'
 import { StudioWebSocketHost } from './infra/websocket/studio-ws-host'
 import { logger } from './infra/logger'
 import { 发送Http错误 } from './shared/http/controller'
+import type { RuntimeActionCommandData, RuntimeManualCommandData, ServerMessage } from './shared/types'
 
 export interface StudioAppContext {
   app: express.Application
@@ -76,6 +77,33 @@ export async function createApp(): Promise<StudioAppContext> {
   wsHost.onMessage((message, context) => {
     if (context.role === 'robot' && context.robotId) {
       mappingService.处理机器人消息(context.robotId, message)
+      return
+    }
+
+    if (context.role === 'ui') {
+      if (!message.robotId || typeof message.robotId !== 'string') {
+        return
+      }
+
+      if (message.type === 'manual_command') {
+        wsHost.sendToRobot(message.robotId, {
+          type: 'manual_command',
+          robotId: message.robotId,
+          timestamp: message.timestamp || Date.now(),
+          data: 规范化对象<RuntimeManualCommandData>(message.data),
+        } as ServerMessage)
+        return
+      }
+
+      if (message.type === 'action_command') {
+        wsHost.sendToRobot(message.robotId, {
+          type: 'action_command',
+          robotId: message.robotId,
+          timestamp: message.timestamp || Date.now(),
+          data: 规范化对象<RuntimeActionCommandData>(message.data),
+        } as ServerMessage)
+        return
+      }
     }
   })
 
@@ -114,4 +142,11 @@ export async function createApp(): Promise<StudioAppContext> {
   })
 
   return { app, wsHost }
+}
+
+function 规范化对象<T extends object>(value: unknown): T {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {} as T
+  }
+  return value as T
 }

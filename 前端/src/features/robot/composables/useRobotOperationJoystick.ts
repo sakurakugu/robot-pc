@@ -1,11 +1,24 @@
 import { ref, watch, type Ref } from 'vue'
-import type { DirectControlCommand, DirectControlMode } from './useDirectRobotControl'
 
 type JoystickPayload = { x: number; y: number }
+type RuntimeControlMode = 'move' | 'pose' | 'two_leg'
 
 export function useRobotOperationJoystick(options: {
   isConnected: Ref<boolean>
-  sendCommand: (message: DirectControlCommand) => void
+  robotId: Ref<string>
+  sendMessage: (message: {
+    type: 'manual_command'
+    robotId: string
+    timestamp: number
+    data: {
+      command: 'update_velocity'
+      mode: RuntimeControlMode
+      vx: number
+      vy: number
+      wz: number
+      source: string
+    }
+  }) => void
 }) {
   const controlMode = ref<'move' | 'pose'>('move')
   const speed = ref(5)
@@ -22,16 +35,31 @@ export function useRobotOperationJoystick(options: {
     sendMergedJoystick(value === 'pose' ? 'pose' : 'move')
   })
 
-  function sendMergedJoystick(mode: DirectControlMode): void {
+  function sendMergedJoystick(mode: RuntimeControlMode): void {
     if (!options.isConnected.value) {
       return
     }
 
-    options.sendCommand({
-      command: 'joystick',
-      mode,
-      speed: speed.value,
-      joystick: joystickAxes.value,
+    const speedRatio = Math.max(0, Math.min(1, speed.value / 30))
+    const [axis0, axis1, axis2] = joystickAxes.value
+    const velocity = mode === 'two_leg'
+      ? { vx: axis0 * 3.0 * speedRatio, vy: 0, wz: axis1 * 1.0 * speedRatio }
+      : mode === 'pose'
+        ? { vx: 0, vy: 0, wz: 0 }
+        : { vx: axis0 * 3.0 * speedRatio, vy: axis1 * 1.0 * speedRatio, wz: axis2 * 3.0 * speedRatio }
+
+    options.sendMessage({
+      type: 'manual_command',
+      robotId: options.robotId.value,
+      timestamp: Date.now(),
+      data: {
+        command: 'update_velocity',
+        mode,
+        vx: velocity.vx,
+        vy: velocity.vy,
+        wz: velocity.wz,
+        source: 'pc-ui',
+      },
     })
   }
 
@@ -108,7 +136,7 @@ export function useRobotOperationJoystick(options: {
   }
 }
 
-function getEffectiveMode(controlMode: 'move' | 'pose', twoLegStandActive: boolean): DirectControlMode {
+function getEffectiveMode(controlMode: 'move' | 'pose', twoLegStandActive: boolean): RuntimeControlMode {
   if (twoLegStandActive) {
     return 'two_leg'
   }

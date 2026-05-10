@@ -107,17 +107,9 @@ export function useDirectRobotControl(robotIp: Ref<string | null | undefined>) {
       return
     }
     socketRef.value.send(JSON.stringify({
-      type: 'control_command',
+      type: 'device_command',
       data: command,
     }))
-  }
-
-  function sendAction(action: string, parameters: Record<string, unknown> = {}): void {
-    sendCommand({ command: 'action', action, parameters })
-  }
-
-  function sendEstop(): void {
-    sendCommand({ command: 'estop' })
   }
 
   function sendMicControl(enabled: boolean): void {
@@ -165,8 +157,6 @@ export function useDirectRobotControl(robotIp: Ref<string | null | undefined>) {
     connect,
     disconnect,
     sendCommand,
-    sendAction,
-    sendEstop,
     sendMicControl,
     sendSwitchMode,
     sendSdkMode,

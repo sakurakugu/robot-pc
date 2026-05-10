@@ -30,9 +30,9 @@
 
         <el-tag
           size="small"
-          :type="directControl.isConnected.value ? 'success' : 'warning'"
+          :type="workstationConnected ? 'success' : 'warning'"
         >
-          {{ directControl.isConnected.value ? '直连已接入' : '直连未接入' }}
+          {{ workstationConnected ? '工作站已接入' : '工作站未接入' }}
         </el-tag>
 
         <el-divider direction="vertical" />
@@ -71,11 +71,11 @@
               size="small"
               text
             >
-              速度: {{ speed }}
+              {{ speedLabel }}: {{ speed }}
             </el-button>
           </template>
           <div class="speed-popover">
-            <span>速度</span>
+            <span>{{ speedLabel }}</span>
             <el-slider
               v-model="speed"
               :min="1"
@@ -200,7 +200,7 @@
           <ActionButton
             :label="button.label"
             :title="button.title"
-            :disabled="!directControl.isConnected.value"
+            :disabled="!workstationConnected"
             @click="handleActionPress(button)"
           />
         </div>
@@ -227,6 +227,7 @@ import { useDirectRobotControl } from '@/features/robot/composables/useDirectRob
 import { useRobotOperationJoystick } from '@/features/robot/composables/useRobotOperationJoystick'
 import type { Robot, RobotTelemetry } from '@/features/robot/types'
 import JoystickPad from '@/share/components/JoystickPad.vue'
+import { useWebSocket } from '@/share/websocket/useWebSocket'
 import {
   Back,
   Camera,
@@ -286,6 +287,7 @@ const robotBatteryText = computed(() => {
   }
   return '--'
 })
+const speedLabel = computed(() => controlMode.value === 'pose' ? '强度' : '速度')
 const videoPlaceholderText = computed(() => {
   if (!selectedRobot.value) {
     return '请先选择机器狗'
@@ -301,6 +303,12 @@ const videoPlaceholderText = computed(() => {
 
 const directControl = useDirectRobotControl(selectedRobotIp)
 const {
+  isConnected: workstationConnected,
+  connect: wsConnect,
+  disconnect: wsDisconnect,
+  send: wsSend,
+} = useWebSocket()
+const {
   controlMode,
   speed,
   twoLegStandActive,
@@ -310,8 +318,11 @@ const {
   onMoveJoystickEnd,
   onLookJoystickEnd,
 } = useRobotOperationJoystick({
-  isConnected: directControl.isConnected,
-  sendCommand: directControl.sendCommand,
+  isConnected: workstationConnected,
+  robotId: selectedUuid,
+  sendMessage: (message) => {
+    wsSend(message)
+  },
 })
 
 async function loadRobots(): Promise<void> {
@@ -365,7 +376,15 @@ function restartTelemetryPolling(): void {
 function handleControlModeChange(): void {
   if (twoLegStandActive.value) {
     twoLegStandActive.value = false
-    directControl.sendAction('cancel_two_leg_stand')
+    wsSend({
+      type: 'action_command',
+      robotId: selectedUuid.value,
+      timestamp: Date.now(),
+      data: {
+        action_name: 'cancel_two_leg_stand',
+        source: 'pc-ui',
+      },
+    })
   }
   directControl.sendSwitchMode(controlMode.value)
 }
@@ -403,7 +422,12 @@ function handleCapturePhoto(): void {
 function handleEmergencyStop(): void {
   const now = Date.now()
   if (now - lastEstopPressAt < 5000) {
-    directControl.sendEstop()
+    wsSend({
+      type: 'manual_command',
+      robotId: selectedUuid.value,
+      timestamp: Date.now(),
+      data: { command: 'emergency_stop', enabled: true, source: 'pc-ui' },
+    })
     ElMessage.error('已触发急停')
     lastEstopPressAt = 0
     return
@@ -421,12 +445,28 @@ function handleToggleMic(): void {
 function handleActionPress(button: ActionButtonConfig): void {
   if (button.id === 'two_leg_stand') {
     twoLegStandActive.value = !twoLegStandActive.value
-    directControl.sendAction(twoLegStandActive.value ? 'two_leg_stand' : 'cancel_two_leg_stand')
+    wsSend({
+      type: 'action_command',
+      robotId: selectedUuid.value,
+      timestamp: Date.now(),
+      data: {
+        action_name: twoLegStandActive.value ? 'two_leg_stand' : 'cancel_two_leg_stand',
+        source: 'pc-ui',
+      },
+    })
     ElMessage.success(twoLegStandActive.value ? '进入双腿站立' : '退出双腿站立')
     return
   }
 
-  directControl.sendAction(button.id)
+  wsSend({
+    type: 'action_command',
+    robotId: selectedUuid.value,
+    timestamp: Date.now(),
+    data: {
+      action_name: button.id,
+      source: 'pc-ui',
+    },
+  })
   ElMessage.success(`已发送动作：${button.title}`)
 }
 
@@ -458,6 +498,7 @@ watch(selectedUuid, () => {
 onMounted(async () => {
   updateTime()
   timeTimer = setInterval(updateTime, 1000)
+  await wsConnect()
   await loadRobots()
   restartTelemetryPolling()
 })
@@ -473,6 +514,7 @@ onBeforeUnmount(() => {
   directControl.setOnPhotoReceived(null)
   directControl.setOnSdkModeResponse(null)
   directControl.disconnect()
+  wsDisconnect()
 })
 </script>
 

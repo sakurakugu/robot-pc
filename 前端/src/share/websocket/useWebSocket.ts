@@ -76,10 +76,20 @@ export function useWebSocket() {
     isConnected.value = false
   }
 
+  const send = (message: unknown): boolean => {
+    if (!socketRef.value || socketRef.value.readyState !== WebSocket.OPEN) {
+      return false
+    }
+
+    socketRef.value.send(JSON.stringify(message))
+    return true
+  }
+
   return {
     isConnected,
     connect,
     disconnect,
+    send,
     onMessage,
   }
 }

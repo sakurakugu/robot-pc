@@ -739,8 +739,8 @@
                 v-if="selectedRobotId"
                 class="command-status-tip"
               >
-                直连控制：{{ directControl.isConnected.value ? '已连接' : '连接中' }}
-                <span v-if="directControl.lastError.value">，{{ directControl.lastError.value }}</span>
+                工作站通道：{{ workstationConnected ? '已连接' : '连接中' }}
+                <span v-if="!workstationConnected">，命令按钮暂不可用</span>
               </p>
               <p
                 v-if="settingInitialPose"
@@ -1472,7 +1472,7 @@ const realtimeMapScanPoints = computed(() => (
 const standaloneLidarPreviewReady = computed(() => standaloneLidarPreviewPoints.value.length > 0)
 const showStandaloneLidarPreview = computed(() => !showPrimaryCanvasStage.value && standaloneLidarPreviewReady.value)
 const showStandaloneLidarPreviewInCanvas = computed(() => !!selectedMap.value && standaloneLidarPreviewReady.value && !hasReliablePoseForLidarOverlay.value)
-const canDirectStandUp = computed(() => !!selectedRobotIp.value && directControl.isConnected.value)
+const canDirectStandUp = computed(() => !!selectedRobotId.value && !!runtime.value.selectedRobot?.wsConnected)
 const standaloneLidarPreviewSummary = computed(() => {
   const scan = runtime.value.lidarScan
   if (!scan) {
@@ -1927,7 +1927,7 @@ const sensorDetailItems = computed(() => [
 
 let pollTimer: number | null = null
 let mapCanvasResizeObserver: ResizeObserver | null = null
-const { onMessage, connect: wsConnect, disconnect: wsDisconnect } = useWebSocket()
+const { onMessage, connect: wsConnect, disconnect: wsDisconnect, send: wsSend, isConnected: workstationConnected } = useWebSocket()
 let removeRealtimeHandler: (() => void) | null = null
 let waypointDetailRequestSerial = 0
 
@@ -1992,17 +1992,23 @@ function handleStandUp(): void {
     ElMessage.warning('请先选择机器人')
     return
   }
-  if (!selectedRobotIp.value) {
-    ElMessage.warning('当前机器人缺少 IP，无法发送站立命令')
+  if (!runtime.value.selectedRobot?.wsConnected) {
+    ElMessage.warning('当前机器人未连接到工作站业务通道，请稍后重试')
     return
   }
-  if (!directControl.isConnected.value) {
-    ElMessage.warning(directControl.lastError.value || '机器人直连控制通道未接入，请稍后重试')
-    directControl.connect()
+  const sent = wsSend({
+    type: 'action_command',
+    robotId: selectedRobotId.value,
+    timestamp: Date.now(),
+    data: {
+      action_name: 'stand_up',
+      source: 'pc-mapping',
+    },
+  })
+  if (!sent) {
+    ElMessage.warning('工作站 WebSocket 未连接，站立命令发送失败')
     return
   }
-
-  directControl.sendAction('stand_up')
   ElMessage.success('已发送站立命令')
 }
 
@@ -3165,6 +3171,17 @@ function parseNumericValue(value: unknown): number | undefined {
     }
   }
   return undefined
+}
+
+function parseConfidenceValue(value: unknown): number | null {
+  const parsed = parseNumericValue(value)
+  if (parsed === undefined) {
+    return null
+  }
+  if (parsed <= 1) {
+    return Math.max(0, parsed)
+  }
+  return Math.max(0, Math.min(1, parsed / 100))
 }
 
 function normalizeDisplayPath(value: string): string {
