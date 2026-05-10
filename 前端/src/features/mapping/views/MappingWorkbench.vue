@@ -271,7 +271,7 @@
             class="viewer-empty"
           >
             <div
-              v-if="standaloneLidarPreviewReady"
+              v-if="showStandaloneLidarPreview"
               class="realtime-preview"
             >
               <div class="realtime-preview-header">
@@ -334,7 +334,7 @@
               </svg>
 
               <p class="realtime-preview-tip">
-                当前未选择本地底图，已回退到雷达实时预览。真机地图保存后仍需同步到工作站本地目录，才能作为底图显示。
+                {{ standaloneLidarPreviewTip }}
               </p>
             </div>
 
@@ -532,6 +532,75 @@
                     :style="goalPoseStyle"
                     title="目标位姿"
                   />
+                </div>
+                <div
+                  v-if="showStandaloneLidarPreviewInCanvas"
+                  class="standalone-preview-overlay"
+                >
+                  <div class="realtime-preview realtime-preview-inline">
+                    <div class="realtime-preview-header">
+                      <strong>实时激光预览</strong>
+                      <span>{{ standaloneLidarPreviewSummary }}</span>
+                    </div>
+
+                    <svg
+                      class="realtime-preview-canvas"
+                      :style="standalonePreviewCanvasStyle"
+                      :viewBox="`0 0 ${STANDALONE_LIDAR_PREVIEW_SIZE} ${STANDALONE_LIDAR_PREVIEW_SIZE}`"
+                      aria-label="实时激光预览"
+                    >
+                      <circle
+                        class="preview-ring"
+                        :cx="STANDALONE_LIDAR_PREVIEW_HALF"
+                        :cy="STANDALONE_LIDAR_PREVIEW_HALF"
+                        :r="STANDALONE_LIDAR_PREVIEW_HALF * 0.25"
+                      />
+                      <circle
+                        class="preview-ring"
+                        :cx="STANDALONE_LIDAR_PREVIEW_HALF"
+                        :cy="STANDALONE_LIDAR_PREVIEW_HALF"
+                        :r="STANDALONE_LIDAR_PREVIEW_HALF * 0.5"
+                      />
+                      <circle
+                        class="preview-ring"
+                        :cx="STANDALONE_LIDAR_PREVIEW_HALF"
+                        :cy="STANDALONE_LIDAR_PREVIEW_HALF"
+                        :r="STANDALONE_LIDAR_PREVIEW_HALF * 0.75"
+                      />
+                      <line
+                        class="preview-axis"
+                        :x1="STANDALONE_LIDAR_PREVIEW_HALF"
+                        y1="24"
+                        :x2="STANDALONE_LIDAR_PREVIEW_HALF"
+                        :y2="STANDALONE_LIDAR_PREVIEW_SIZE - 24"
+                      />
+                      <line
+                        class="preview-axis"
+                        x1="24"
+                        :y1="STANDALONE_LIDAR_PREVIEW_HALF"
+                        :x2="STANDALONE_LIDAR_PREVIEW_SIZE - 24"
+                        :y2="STANDALONE_LIDAR_PREVIEW_HALF"
+                      />
+                      <circle
+                        class="preview-robot"
+                        :cx="STANDALONE_LIDAR_PREVIEW_HALF"
+                        :cy="STANDALONE_LIDAR_PREVIEW_HALF"
+                        r="7"
+                      />
+                      <circle
+                        v-for="point in standaloneLidarPreviewPoints"
+                        :key="point.id"
+                        class="preview-point"
+                        :cx="point.x"
+                        :cy="point.y"
+                        r="1.8"
+                      />
+                    </svg>
+
+                    <p class="realtime-preview-tip">
+                      {{ standaloneLidarPreviewTip }}
+                    </p>
+                  </div>
                 </div>
                 <div
                   class="rotation-float"
@@ -1249,6 +1318,16 @@ const selectedWaypointFile = computed(() => waypointFiles.value.find((item) => i
 const activeMap = computed(() => maps.value.find((item) => item.id === runtime.value.activeMapId) || null)
 const realtimeMapPreview = computed(() => runtime.value.mapPreview)
 const currentPose = computed(() => runtime.value.lidarScan?.pose ?? runtime.value.currentPose)
+const localizationConfidenceValue = computed(() => parseConfidenceValue(localizationRuntimeState.value?.confidence ?? currentPose.value?.confidence))
+const hasReliablePoseForLidarOverlay = computed(() => {
+  if (!currentPose.value) {
+    return false
+  }
+  if (!runtime.value.localizationActive) {
+    return false
+  }
+  return localizationConfidenceValue.value !== null && localizationConfidenceValue.value >= 0.5
+})
 const currentPoseStyle = computed(() => buildPoseStyle(currentPose.value, true))
 const remoteMapSaveDir = computed(() => extractStringField(mapRuntimeState.value ?? {}, ['save_dir']))
 const remoteLatestMapName = computed(() => extractStringField(mapRuntimeState.value ?? {}, ['last_map']))
@@ -1371,14 +1450,28 @@ const draftGoalPoseStyle = computed(() => {
   )
 })
 const goalPoseStyle = computed(() => buildPoseStyle(runtime.value.goalPose, false))
-const lidarScanPoints = computed(() => buildLidarScanPoints(runtime.value.lidarScan, currentPose.value))
+const lidarScanPoints = computed(() => (
+  hasReliablePoseForLidarOverlay.value
+    ? buildLidarScanPoints(runtime.value.lidarScan, currentPose.value)
+    : []
+))
 const standaloneLidarPreviewPoints = computed(() => buildStandaloneLidarPreviewPoints(runtime.value.lidarScan))
 const realtimeMapPreviewReady = computed(() => !!runtime.value.mapPreview?.data && runtime.value.mapPreview.width > 0 && runtime.value.mapPreview.height > 0)
 const showRealtimeMapPreview = computed(() => realtimeMapPreviewReady.value && (runtime.value.mappingActive || !selectedMap.value))
-const realtimeMapRobotMarker = computed(() => buildPreviewPoseMarker(currentPose.value))
+const realtimeMapRobotMarker = computed(() => (
+  hasReliablePoseForLidarOverlay.value
+    ? buildPreviewPoseMarker(currentPose.value)
+    : null
+))
 const realtimeMapGoalMarker = computed(() => buildPreviewPoseMarker(runtime.value.goalPose, false))
-const realtimeMapScanPoints = computed(() => buildPreviewLidarPoints(runtime.value.lidarScan, currentPose.value))
-const standaloneLidarPreviewReady = computed(() => !selectedMap.value && standaloneLidarPreviewPoints.value.length > 0)
+const realtimeMapScanPoints = computed(() => (
+  hasReliablePoseForLidarOverlay.value
+    ? buildPreviewLidarPoints(runtime.value.lidarScan, currentPose.value)
+    : []
+))
+const standaloneLidarPreviewReady = computed(() => standaloneLidarPreviewPoints.value.length > 0)
+const showStandaloneLidarPreview = computed(() => !showPrimaryCanvasStage.value && standaloneLidarPreviewReady.value)
+const showStandaloneLidarPreviewInCanvas = computed(() => !!selectedMap.value && standaloneLidarPreviewReady.value && !hasReliablePoseForLidarOverlay.value)
 const canDirectStandUp = computed(() => !!selectedRobotIp.value && directControl.isConnected.value)
 const standaloneLidarPreviewSummary = computed(() => {
   const scan = runtime.value.lidarScan
@@ -1386,6 +1479,18 @@ const standaloneLidarPreviewSummary = computed(() => {
     return '等待激光数据'
   }
   return `${scan.pointCount} 点 / ${scan.rangeMax.toFixed(1)}m 量程`
+})
+const standaloneLidarPreviewTip = computed(() => {
+  if (!selectedMap.value) {
+    return '当前未选择本地底图，已回退到雷达实时预览。真机地图保存后仍需同步到工作站本地目录，才能作为底图显示。'
+  }
+  if (!runtime.value.localizationActive) {
+    return '当前定位未启动，已暂停把激光点叠加到地图坐标系，避免画面误转。'
+  }
+  if (localizationConfidenceValue.value === null) {
+    return '当前定位置信度未上报，已暂停把激光点叠加到地图坐标系，避免姿态漂移导致画面旋转。'
+  }
+  return `当前定位置信度为 ${localizationConfidenceValue.value.toFixed(2)}，低于叠加阈值 0.50，已回退到独立雷达预览。`
 })
 const mapRuntimeState = computed(() => runtime.value.mapState ?? runtime.value.robotSummary?.mapping ?? null)
 const localizationRuntimeState = computed(() => runtime.value.robotSummary?.localization ?? null)
