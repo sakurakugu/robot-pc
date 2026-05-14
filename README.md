@@ -1,28 +1,55 @@
 # robot-pc
 
-机器狗电脑端工作站，负责以下本地优先能力：
+机器狗电脑端工作站，当前是局域网的工作台。
 
-- 编舞编辑与执行
-- 地图查看与建图过程查看
-- 定位、导航与雷达调试
-- 局域网直连机器人
-- 本地资源、日志与项目文件管理
+## 当前职责
 
-## 当前目录
+- 本地机器人管理
+- 局域网接入与诊断
+- 机器人操作页
+- 地图工作台
+- 编舞编辑
+- 本地视频与低时延直控
+
+## 目录结构
 
 ```text
 robot-pc/
-├── 前端/          # Vue 3 + TypeScript + Vite
-├── 后端/          # Node.js + TypeScript，本地 API / WebSocket
-└── docs/          # 设计与使用文档
+├── 前端/                    # Vue 3 + Vite
+├── 后端/                    # Node.js + Express + WebSocket
+├── electron/                # Electron 主进程
+├── tools/                   # 启动、检查、打包脚本
+├── docs/                    # 设计文档
+└── README.md
 ```
 
-## 定位
+## 环境要求
 
-- `robot-cloud` 负责云端管理、账号权限、远程接入与资产管理
-- `robot-pc` 负责电脑端重交互、本地调试与专业工作流
+- Node.js `24.x`
+- npm
 
-## 启动方式
+## 推荐启动方式
+
+统一用脚本：
+
+```bash
+python tools/1.启动电脑端.py
+```
+
+默认行为是 `restart`，会同时启动前端和后端开发服务。
+
+常用命令：
+
+```bash
+python tools/1.启动电脑端.py start
+python tools/1.启动电脑端.py stop
+python tools/1.启动电脑端.py restart
+python tools/1.启动电脑端.py status
+python tools/1.启动电脑端.py check
+python tools/1.启动电脑端.py build
+```
+
+## 直接分开启动
 
 ```bash
 # 前端
@@ -36,10 +63,68 @@ npm install
 npm run dev
 ```
 
-- 前端默认端口：`5175`
-- 后端默认端口：`9010`
+桌面端打包依赖根目录 `package.json` 与 `electron/`。
 
-## 当前阶段
+## 默认端口
 
-当前已完成工作站基础骨架，并迁入第一批编舞系统代码。
-后续将继续补地图查看、建图过程调试和本地机器人直连能力。
+- 前端：`5175`
+- 后端：`9010`
+- 健康检查：`http://127.0.0.1:9010/api/v1/health`
+
+前端开发代理：
+
+- `/api/v1` -> `http://127.0.0.1:9010`
+- `/api/v1/web` -> `ws://127.0.0.1:9010`
+
+## 校验
+
+前端：
+
+```bash
+cd 前端
+npm run lint
+npm run typecheck
+```
+
+后端：
+
+```bash
+cd 后端
+npm run lint
+npm run typecheck
+```
+
+桌面端：
+
+```bash
+npm run lint
+npm run typecheck
+```
+
+如果你只是想一次跑完当前仓库的工作站检查，直接使用：
+
+```bash
+python tools/1.启动电脑端.py check
+```
+
+## 打包
+
+Electron 安装包构建：
+
+```bash
+python tools/1.启动电脑端.py build
+```
+
+或：
+
+```bash
+npm run build
+npm run dist:win
+```
+
+## 定位说明
+
+- `robot-pc` 负责本地优先工作流
+- `robot-cloud` 负责远程管理与账号体系
+
+两者会共享一部分机器人资料，但当前控制主链路仍以工作站局域网直连为主。
