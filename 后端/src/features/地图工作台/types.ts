@@ -9,6 +9,7 @@ export type 地图命令类型 =
   | 'load_map'
   | 'start_localization'
   | 'stop_localization'
+  | 'global_relocalize'
   | 'set_initial_pose'
 
 export type 导航命令类型 =

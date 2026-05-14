@@ -9,6 +9,7 @@ export type MappingCommand =
   | 'load_map'
   | 'start_localization'
   | 'stop_localization'
+  | 'global_relocalize'
   | 'set_initial_pose'
 export type NavigationCommand = 'navigate_to' | 'cancel' | 'pause' | 'resume' | 'terminate'
 export type PatrolCommand = 'start_patrol' | 'pause' | 'resume' | 'terminate'

@@ -536,6 +536,25 @@ export class 地图工作台服务 {
         this.运行状态.mode = this.运行状态.activeMapId ? 'map_loaded' : 'idle'
         this.运行状态.taskState = null
         break
+      case 'global_relocalize':
+        if (!目标地图) {
+          throw Http错误工厂.参数错误('自动重定位前请先加载地图', 'MAP_REQUIRED')
+        }
+        this.运行状态.mode = 'localizing'
+        this.运行状态.mappingActive = false
+        this.运行状态.localizationActive = true
+        this.运行状态.activeMapId = 目标地图.id
+        this.运行状态.goalPose = null
+        this.运行状态.taskState = null
+        if (!this.运行状态.currentPose) {
+          this.运行状态.currentPose = 创建演示位姿(目标地图, 28, 22, 0.36, 0.35)
+        } else {
+          this.运行状态.currentPose = {
+            ...this.运行状态.currentPose,
+            confidence: 0.35,
+          }
+        }
+        break
       case 'set_initial_pose':
         if (!请求.pose) {
           throw Http错误工厂.参数错误('初始位姿不能为空', 'INITIAL_POSE_REQUIRED')
@@ -1478,6 +1497,12 @@ function 构建地图命令负载(
       return {
         requestId,
         command: 'stop_localization',
+      }
+    case 'global_relocalize':
+      return {
+        requestId,
+        command: 'global_relocalize',
+        map_name: 目标地图名,
       }
     case 'set_initial_pose':
       return {

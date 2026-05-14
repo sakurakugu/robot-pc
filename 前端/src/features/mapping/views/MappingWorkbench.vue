@@ -219,7 +219,13 @@
                 </div>
               </div>
               <div class="viewer-header-subline">
-                <p>显示地图底图，并叠加机器人位姿、目标位姿与实时激光扫描</p>
+                <el-switch
+                  v-model="mapOverlayEnabled"
+                  inline-prompt
+                  active-text="叠加开"
+                  inactive-text="叠加关"
+                  :disabled="!showPrimaryCanvasStage"
+                />
                 <div class="map-toolbar">
                   <el-button
                     size="small"
@@ -725,6 +731,14 @@
                   @click="sendMapCommand('stop_localization')"
                 >
                   停止定位
+                </el-button>
+                <el-button
+                  type="success"
+                  plain
+                  :disabled="!selectedMap || !runtime.localizationActive || !canSendCommand"
+                  @click="sendMapCommand('global_relocalize', selectedMap?.id)"
+                >
+                  自动重定位
                 </el-button>
                 <el-button
                   type="success"
@@ -1286,6 +1300,7 @@ const commandLabelMap: Record<RuntimeCommand, string> = {
   load_map: '加载地图',
   start_localization: '启动定位',
   stop_localization: '停止定位',
+  global_relocalize: '自动重定位',
   set_initial_pose: '设置初始位姿',
   navigate_to: '导航到点',
   cancel: '取消导航',
@@ -1319,14 +1334,15 @@ const activeMap = computed(() => maps.value.find((item) => item.id === runtime.v
 const realtimeMapPreview = computed(() => runtime.value.mapPreview)
 const currentPose = computed(() => runtime.value.lidarScan?.pose ?? runtime.value.currentPose)
 const localizationConfidenceValue = computed(() => parseConfidenceValue(localizationRuntimeState.value?.confidence ?? currentPose.value?.confidence))
-const hasReliablePoseForLidarOverlay = computed(() => {
+const mapOverlayEnabled = ref(true)
+const canRenderPoseOverlay = computed(() => {
   if (!currentPose.value) {
     return false
   }
   if (!runtime.value.localizationActive) {
     return false
   }
-  return localizationConfidenceValue.value !== null && localizationConfidenceValue.value >= 0.5
+  return mapOverlayEnabled.value
 })
 const currentPoseStyle = computed(() => buildPoseStyle(currentPose.value, true))
 const remoteMapSaveDir = computed(() => extractStringField(mapRuntimeState.value ?? {}, ['save_dir']))
@@ -1451,7 +1467,7 @@ const draftGoalPoseStyle = computed(() => {
 })
 const goalPoseStyle = computed(() => buildPoseStyle(runtime.value.goalPose, false))
 const lidarScanPoints = computed(() => (
-  hasReliablePoseForLidarOverlay.value
+  canRenderPoseOverlay.value
     ? buildLidarScanPoints(runtime.value.lidarScan, currentPose.value)
     : []
 ))
@@ -1459,19 +1475,19 @@ const standaloneLidarPreviewPoints = computed(() => buildStandaloneLidarPreviewP
 const realtimeMapPreviewReady = computed(() => !!runtime.value.mapPreview?.data && runtime.value.mapPreview.width > 0 && runtime.value.mapPreview.height > 0)
 const showRealtimeMapPreview = computed(() => realtimeMapPreviewReady.value && (runtime.value.mappingActive || !selectedMap.value))
 const realtimeMapRobotMarker = computed(() => (
-  hasReliablePoseForLidarOverlay.value
+  canRenderPoseOverlay.value
     ? buildPreviewPoseMarker(currentPose.value)
     : null
 ))
 const realtimeMapGoalMarker = computed(() => buildPreviewPoseMarker(runtime.value.goalPose, false))
 const realtimeMapScanPoints = computed(() => (
-  hasReliablePoseForLidarOverlay.value
+  canRenderPoseOverlay.value
     ? buildPreviewLidarPoints(runtime.value.lidarScan, currentPose.value)
     : []
 ))
 const standaloneLidarPreviewReady = computed(() => standaloneLidarPreviewPoints.value.length > 0)
 const showStandaloneLidarPreview = computed(() => !showPrimaryCanvasStage.value && standaloneLidarPreviewReady.value)
-const showStandaloneLidarPreviewInCanvas = computed(() => !!selectedMap.value && standaloneLidarPreviewReady.value && !hasReliablePoseForLidarOverlay.value)
+const showStandaloneLidarPreviewInCanvas = computed(() => !!selectedMap.value && standaloneLidarPreviewReady.value && !canRenderPoseOverlay.value)
 const canDirectStandUp = computed(() => !!selectedRobotId.value && !!runtime.value.selectedRobot?.wsConnected)
 const standaloneLidarPreviewSummary = computed(() => {
   const scan = runtime.value.lidarScan
@@ -1484,13 +1500,19 @@ const standaloneLidarPreviewTip = computed(() => {
   if (!selectedMap.value) {
     return '当前未选择本地底图，已回退到雷达实时预览。真机地图保存后仍需同步到工作站本地目录，才能作为底图显示。'
   }
+  if (!mapOverlayEnabled.value) {
+    return '地图叠加开关已关闭，当前显示独立雷达预览。'
+  }
   if (!runtime.value.localizationActive) {
     return '当前定位未启动，已暂停把激光点叠加到地图坐标系，避免画面误转。'
   }
-  if (localizationConfidenceValue.value === null) {
-    return '当前定位置信度未上报，已暂停把激光点叠加到地图坐标系，避免姿态漂移导致画面旋转。'
+  if (!currentPose.value) {
+    return '当前位姿未上报，已回退到独立雷达预览。'
   }
-  return `当前定位置信度为 ${localizationConfidenceValue.value.toFixed(2)}，低于叠加阈值 0.50，已回退到独立雷达预览。`
+  if (localizationConfidenceValue.value === null) {
+    return '当前定位置信度未上报，但叠加开关开启后仍会按当前位姿尝试叠加。'
+  }
+  return `当前定位置信度为 ${localizationConfidenceValue.value.toFixed(2)}，叠加开关已开启。`
 })
 const mapRuntimeState = computed(() => runtime.value.mapState ?? runtime.value.robotSummary?.mapping ?? null)
 const localizationRuntimeState = computed(() => runtime.value.robotSummary?.localization ?? null)
@@ -3222,6 +3244,10 @@ function buildCommandSuccessMessage(
     showDraftInitialPose.value = false
     settingInitialPose.value = false
     return '定位初始位姿已发送'
+  }
+
+  if (payload.type === 'map' && payload.command === 'global_relocalize') {
+    return '已触发自动重定位，请稍候观察定位置信度变化'
   }
 
   return fallbackMessage || '命令已发送'
