@@ -501,7 +501,7 @@
                   >
                     <span
                       class="pose-arrow"
-                      :style="{ transform: `rotate(${currentPose?.yaw ?? 0}rad)` }"
+                      :style="{ transform: `translateX(-50%) rotate(${buildPoseArrowRotation(currentPose?.yaw ?? 0, realtimeMapPreview?.origin[2] ?? 0)}rad)` }"
                     />
                   </div>
 
@@ -2796,10 +2796,13 @@ function extractWorldPointFromEvent(event: MouseEvent): { x: number; y: number }
   const yRatio = (unrotatedClientY - imageRect.top) / imageRect.height
   const imageX = xRatio * mapImageSize.value.width
   const imageY = yRatio * mapImageSize.value.height
-  return {
-    x: selectedMap.value.origin[0] + (imageX * selectedMap.value.resolution),
-    y: selectedMap.value.origin[1] + ((mapImageSize.value.height - imageY) * selectedMap.value.resolution),
-  }
+  return buildWorldPointFromImagePoint(
+    imageX,
+    imageY,
+    selectedMap.value.origin,
+    selectedMap.value.resolution,
+    mapImageSize.value.height,
+  )
 }
 
 function buildPoseStyle(pose: PlanarPose | null, withArrow: boolean): Record<string, string> | null {
@@ -2807,10 +2810,21 @@ function buildPoseStyle(pose: PlanarPose | null, withArrow: boolean): Record<str
     return null
   }
 
-  const xPixels = (pose.position[0] - selectedMap.value.origin[0]) / selectedMap.value.resolution
-  const yPixels = mapImageSize.value.height - ((pose.position[1] - selectedMap.value.origin[1]) / selectedMap.value.resolution)
-  const left = (xPixels / mapImageSize.value.width) * 100
-  const top = (yPixels / mapImageSize.value.height) * 100
+  const point = buildImagePoint(
+    pose.position[0],
+    pose.position[1],
+    selectedMap.value.origin,
+    selectedMap.value.resolution,
+    mapImageSize.value.width,
+    mapImageSize.value.height,
+  )
+  if (!point) {
+    return null
+  }
+
+  const rotation = buildPoseArrowRotation(pose.yaw, selectedMap.value.origin[2])
+  const left = (point.x / mapImageSize.value.width) * 100
+  const top = (point.y / mapImageSize.value.height) * 100
 
   if (!Number.isFinite(left) || !Number.isFinite(top)) {
     return null
@@ -2820,7 +2834,7 @@ function buildPoseStyle(pose: PlanarPose | null, withArrow: boolean): Record<str
     left: `${left}%`,
     top: `${top}%`,
     transform: withArrow
-      ? `translate(-50%, -50%) rotate(${pose.yaw}rad)`
+      ? `translate(-50%, -50%) rotate(${rotation}rad)`
       : 'translate(-50%, -50%)',
   }
 }
@@ -2864,15 +2878,60 @@ function buildCanvasPoint(worldX: number, worldY: number): { x: number; y: numbe
     return null
   }
 
-  const xPixels = (worldX - selectedMap.value.origin[0]) / selectedMap.value.resolution
-  const yPixels = mapImageSize.value.height - ((worldY - selectedMap.value.origin[1]) / selectedMap.value.resolution)
+  return buildImagePoint(
+    worldX,
+    worldY,
+    selectedMap.value.origin,
+    selectedMap.value.resolution,
+    mapImageSize.value.width,
+    mapImageSize.value.height,
+  )
+}
+
+function buildPreviewCanvasPoint(worldX: number, worldY: number): { x: number; y: number } | null {
+  const preview = realtimeMapPreview.value
+  if (!preview || preview.width <= 0 || preview.height <= 0) {
+    return null
+  }
+
+  return buildImagePoint(
+    worldX,
+    worldY,
+    preview.origin,
+    preview.resolution,
+    preview.width,
+    preview.height,
+  )
+}
+
+function buildImagePoint(
+  worldX: number,
+  worldY: number,
+  origin: [number, number, number],
+  resolution: number,
+  imageWidth: number,
+  imageHeight: number,
+): { x: number; y: number } | null {
+  if (!Number.isFinite(worldX) || !Number.isFinite(worldY) || !Number.isFinite(resolution) || resolution <= 0) {
+    return null
+  }
+
+  const originYaw = Number.isFinite(origin[2]) ? origin[2] : 0
+  const offsetX = worldX - origin[0]
+  const offsetY = worldY - origin[1]
+  const cosYaw = Math.cos(originYaw)
+  const sinYaw = Math.sin(originYaw)
+  const mapX = (offsetX * cosYaw) + (offsetY * sinYaw)
+  const mapY = (-offsetX * sinYaw) + (offsetY * cosYaw)
+  const xPixels = mapX / resolution
+  const yPixels = imageHeight - (mapY / resolution)
   if (
     !Number.isFinite(xPixels)
     || !Number.isFinite(yPixels)
     || xPixels < 0
     || yPixels < 0
-    || xPixels > mapImageSize.value.width
-    || yPixels > mapImageSize.value.height
+    || xPixels > imageWidth
+    || yPixels > imageHeight
   ) {
     return null
   }
@@ -2883,29 +2942,31 @@ function buildCanvasPoint(worldX: number, worldY: number): { x: number; y: numbe
   }
 }
 
-function buildPreviewCanvasPoint(worldX: number, worldY: number): { x: number; y: number } | null {
-  const preview = realtimeMapPreview.value
-  if (!preview || preview.width <= 0 || preview.height <= 0) {
+function buildWorldPointFromImagePoint(
+  imageX: number,
+  imageY: number,
+  origin: [number, number, number],
+  resolution: number,
+  imageHeight: number,
+): { x: number; y: number } | null {
+  if (!Number.isFinite(imageX) || !Number.isFinite(imageY) || !Number.isFinite(resolution) || resolution <= 0) {
     return null
   }
 
-  const xPixels = (worldX - preview.origin[0]) / preview.resolution
-  const yPixels = preview.height - ((worldY - preview.origin[1]) / preview.resolution)
-  if (
-    !Number.isFinite(xPixels)
-    || !Number.isFinite(yPixels)
-    || xPixels < 0
-    || yPixels < 0
-    || xPixels > preview.width
-    || yPixels > preview.height
-  ) {
-    return null
-  }
-
+  const originYaw = Number.isFinite(origin[2]) ? origin[2] : 0
+  const mapX = imageX * resolution
+  const mapY = (imageHeight - imageY) * resolution
+  const cosYaw = Math.cos(originYaw)
+  const sinYaw = Math.sin(originYaw)
   return {
-    x: xPixels,
-    y: yPixels,
+    x: origin[0] + (mapX * cosYaw) - (mapY * sinYaw),
+    y: origin[1] + (mapX * sinYaw) + (mapY * cosYaw),
   }
+}
+
+function buildPoseArrowRotation(worldYaw: number, originYaw: number): number {
+  const normalizedOriginYaw = Number.isFinite(originYaw) ? originYaw : 0
+  return worldYaw - normalizedOriginYaw + (Math.PI / 2)
 }
 
 function buildPolylinePoints(points: Array<{ x: number; y: number }>): string {
@@ -3049,12 +3110,14 @@ function buildPreviewPoseMarker(
     return null
   }
 
+  const preview = realtimeMapPreview.value
+  const imageYaw = pose.yaw - (preview?.origin[2] ?? 0)
   const headingLength = withHeading ? Math.max(10, Math.min(24, 0.5 / Math.max(realtimeMapPreview.value?.resolution || 0.05, 0.01))) : 0
   return {
     x: center.x,
     y: center.y,
-    headingX: center.x + (Math.cos(pose.yaw) * headingLength),
-    headingY: center.y - (Math.sin(pose.yaw) * headingLength),
+    headingX: center.x + (Math.cos(imageYaw) * headingLength),
+    headingY: center.y - (Math.sin(imageYaw) * headingLength),
   }
 }
 
