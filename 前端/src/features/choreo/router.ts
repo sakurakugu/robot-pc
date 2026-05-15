@@ -6,7 +6,7 @@ import type { RouteRecordRaw } from 'vue-router'
 
 export const choreoRoutes: RouteRecordRaw[] = [
   {
-    path: '/choreo',
+    path: 'choreo',
     name: 'ChoreoList',
     component: () => import('./views/ChoreoList.vue'),
     meta: {
@@ -14,7 +14,7 @@ export const choreoRoutes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/choreo/:uuid',
+    path: 'choreo/:uuid',
     name: 'ChoreoEditor',
     component: () => import('./views/ChoreoEditor.vue'),
     meta: {
@@ -32,7 +32,7 @@ export const choreoRoutes: RouteRecordRaw[] = [
     ],
   },
   {
-    path: '/choreo/:uuid/help',
+    path: 'choreo/:uuid/help',
     name: 'ChoreoHelp',
     component: () => import('./views/ChoreoHelp.vue'),
     meta: {
@@ -40,7 +40,7 @@ export const choreoRoutes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/choreo/:uuid/about',
+    path: 'choreo/:uuid/about',
     name: 'ChoreoAbout',
     component: () => import('./views/ChoreoAbout.vue'),
     meta: {
@@ -48,7 +48,7 @@ export const choreoRoutes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/choreo/:uuid/settings',
+    path: 'choreo/:uuid/settings',
     name: 'ChoreoSettings',
     component: () => import('./views/ChoreoSettings.vue'),
     meta: {

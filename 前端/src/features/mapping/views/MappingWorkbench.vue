@@ -71,7 +71,6 @@
           <div class="panel-header">
             <div>
               <h2>地图仓库</h2>
-              <p>自动扫描本地 `yaml + pgm/png` 地图</p>
             </div>
             <div class="panel-actions">
               <el-tag type="info">
@@ -657,7 +656,6 @@
             <div class="panel-header">
               <div>
                 <h2>运行与命令</h2>
-                <p>本地优先的建图、定位、导航与巡逻调试面板</p>
               </div>
             </div>
 

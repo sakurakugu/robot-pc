@@ -33,10 +33,10 @@ const routes: RouteRecordRaw[] = [
       ...accountRoutes,
       ...robotRoutes,
       ...mappingRoutes,
+      ...choreoRoutes,
       ...developerRoutes,
     ],
   },
-  ...choreoRoutes,
   {
     path: '/:pathMatch(.*)*',
     redirect: '/',
